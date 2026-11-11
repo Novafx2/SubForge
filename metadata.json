@@ -1,0 +1,6 @@
+{
+  "name": "SubForge – Free Subtitle & Video Creator Utilities",
+  "description": "Free, 100% browser-based subtitle and creator tools. Convert SRT to VTT, fix subtitle timings, convert framerates, extract clean text, validate syntax, merge captions, and generate YouTube chapters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

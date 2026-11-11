@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Users collection: users can read/write their own profile, but NEVER set role to 'admin'
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() && request.auth.uid == userId && (!('role' in request.resource.data) || request.resource.data.role == 'user');
+      allow update: if isAuthenticated() && request.auth.uid == userId && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role);
+      allow delete: if false;
+    }
+
+    // Public website configuration, articles, pages, media, SEO, affiliate links, ads
+    match /website_config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /articles/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /pages/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /media/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /seo_config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /affiliate_links/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /ads_config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

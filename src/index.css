@@ -1,0 +1,270 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Poppins', system-ui, -apple-system, sans-serif;
+    --font-body: 'Poppins', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  html,
+  body,
+  button,
+  input,
+  select,
+  textarea {
+    font-family: var(--font-body);
+  }
+
+  body {
+    font-family: var(--font-body);
+    background-color: #030108;
+    background-image:
+      linear-gradient(rgba(3, 1, 8, 0.76), rgba(3, 1, 8, 0.84)),
+      url('/assets/aistudio/images__4__f49af4e7.jpg'),
+      radial-gradient(circle at 15% 15%, rgba(59, 130, 246, 0.22) 0%, transparent 45%),
+      radial-gradient(circle at 85% 20%, rgba(168, 85, 247, 0.25) 0%, transparent 50%),
+      radial-gradient(circle at 50% 85%, rgba(6, 182, 212, 0.16) 0%, transparent 55%),
+      linear-gradient(135deg, #030108 0%, #0d061f 50%, #030108 100%);
+    background-size: cover, cover, auto, auto, auto, auto;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    color: #F8FAFC;
+    text-transform: uppercase;
+    overflow-x: hidden;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    text-transform: uppercase;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* =========================================================================
+     REFERENCE IMAGE 1: ULTRA-PREMIUM FROSTED GLASS UI PILL BUTTON
+     ========================================================================= */
+  .glass-pill-btn,
+  .fintech-btn-primary,
+  .neon-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px !important;
+    font-family: var(--font-body);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #ffffff !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.12) 48%, rgba(255, 255, 255, 0.04) 100%),
+      linear-gradient(135deg, rgba(124, 58, 237, 0.65) 0%, rgba(59, 130, 246, 0.50) 100%) !important;
+    backdrop-filter: blur(20px) saturate(190%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(190%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.45) !important;
+    box-shadow:
+      0 12px 28px -4px rgba(0, 0, 0, 0.65),
+      0 0 25px -2px rgba(168, 85, 247, 0.45),
+      0 0 12px rgba(6, 182, 212, 0.30),
+      inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.90),
+      inset 0 -2px 4px 0 rgba(0, 0, 0, 0.25),
+      inset 0 0 16px 0 rgba(255, 255, 255, 0.15) !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .glass-pill-btn:hover,
+  .fintech-btn-primary:hover,
+  .neon-btn:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.18) 48%, rgba(255, 255, 255, 0.08) 100%),
+      linear-gradient(135deg, rgba(139, 92, 246, 0.78) 0%, rgba(37, 99, 235, 0.62) 100%) !important;
+    border-color: rgba(255, 255, 255, 0.70) !important;
+    box-shadow:
+      0 16px 36px -4px rgba(0, 0, 0, 0.75),
+      0 0 35px rgba(168, 85, 247, 0.70),
+      0 0 20px rgba(6, 182, 212, 0.45),
+      inset 0 2px 2px 0 rgba(255, 255, 255, 1),
+      inset 0 -2px 4px 0 rgba(0, 0, 0, 0.20),
+      inset 0 0 20px 0 rgba(255, 255, 255, 0.25) !important;
+    transform: translateY(-2px);
+    color: #ffffff !important;
+  }
+
+  .glass-pill-btn:active,
+  .fintech-btn-primary:active,
+  .neon-btn:active {
+    transform: translateY(1px) scale(0.98);
+    box-shadow:
+      0 4px 12px rgba(0, 0, 0, 0.55),
+      0 0 18px rgba(168, 85, 247, 0.40),
+      inset 0 2px 4px rgba(0, 0, 0, 0.35),
+      inset 0 -1px 1px rgba(255, 255, 255, 0.4) !important;
+  }
+
+  /* Secondary Translucent Frosted Glass Pill Button */
+  .fintech-btn-secondary {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px !important;
+    font-family: var(--font-body);
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    color: #e2e8f0 !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(18, 11, 34, 0.65) 100%) !important;
+    backdrop-filter: blur(16px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.26) !important;
+    box-shadow:
+      0 8px 22px rgba(0, 0, 0, 0.48),
+      inset 0 1px 1px rgba(255, 255, 255, 0.50),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.30) !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .fintech-btn-secondary:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.10) 50%, rgba(32, 20, 60, 0.75) 100%) !important;
+    border-color: rgba(6, 182, 212, 0.50) !important;
+    box-shadow:
+      0 12px 26px rgba(0, 0, 0, 0.60),
+      0 0 20px rgba(168, 85, 247, 0.35),
+      0 0 10px rgba(6, 182, 212, 0.25),
+      inset 0 1.5px 1px rgba(255, 255, 255, 0.75) !important;
+    transform: translateY(-2px);
+    color: #ffffff !important;
+  }
+
+  /* Soft Premium Glassmorphism Card & Panel */
+  .fintech-panel,
+  .glass-card {
+    background: linear-gradient(145deg, rgba(20, 12, 38, 0.72) 0%, rgba(8, 4, 18, 0.65) 100%) !important;
+    backdrop-filter: blur(24px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    border: 1px solid rgba(168, 85, 247, 0.25) !important;
+    box-shadow:
+      0 20px 48px rgba(0, 0, 0, 0.65),
+      0 0 30px rgba(124, 58, 237, 0.12),
+      inset 0 1px 1px rgba(255, 255, 255, 0.12),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.4) !important;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+    border-radius: 1.5rem !important;
+  }
+
+  .fintech-panel:hover,
+  .glass-card:hover {
+    border-color: rgba(6, 182, 212, 0.45) !important;
+    box-shadow:
+      0 24px 56px rgba(0, 0, 0, 0.75),
+      0 0 40px rgba(168, 85, 247, 0.28),
+      0 0 18px rgba(6, 182, 212, 0.20),
+      inset 0 1px 1.5px rgba(255, 255, 255, 0.22) !important;
+  }
+
+  /* Glass UI Input fields */
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  textarea,
+  select {
+    background: rgba(10, 6, 22, 0.65) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(168, 85, 247, 0.25) !important;
+    border-radius: 0.875rem;
+    color: #f8fafc !important;
+    transition: all 0.2s ease;
+  }
+
+  input[type="text"]:focus,
+  input[type="password"]:focus,
+  input[type="email"]:focus,
+  input[type="number"]:focus,
+  textarea:focus,
+  select:focus {
+    border-color: rgba(6, 182, 212, 0.6) !important;
+    box-shadow: 0 0 16px rgba(124, 58, 237, 0.35), inset 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+  }
+}
+
+/* Custom scrollbar for Liquid Glass Neon aesthetic */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #030108;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #231448;
+  border-radius: 4px;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3B2170;
+  border-color: rgba(6, 182, 212, 0.5);
+}
+
+/* =========================================================================
+   HERO SECTION ENTRY ANIMATIONS (Fade-in + subtle vertical slide)
+   ========================================================================= */
+@keyframes heroFadeSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-hero-kicker {
+  animation: heroFadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+
+.animate-hero-heading {
+  animation: heroFadeSlideUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+.animate-hero-subtitle {
+  animation: heroFadeSlideUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+}
+
+.animate-hero-search {
+  animation: heroFadeSlideUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.40s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-kicker,
+  .animate-hero-heading,
+  .animate-hero-subtitle,
+  .animate-hero-search {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
