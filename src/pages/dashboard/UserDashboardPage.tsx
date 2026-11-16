@@ -1,7 +1,7 @@
 import { useAuth } from '../../context/AuthContext';
 import { useRouter, Link } from '../../context/RouterContext';
 import { SEOHead } from '../../components/layout/SEOHead';
-import { TOOLS } from '../../utils/seoData';
+import { TOOLS, getToolEmoji } from '../../utils/seoData';
 import {
   User,
   Calendar,
@@ -171,15 +171,25 @@ export function UserDashboardPage() {
                 <Link
                   key={t.id}
                   to={t.path}
-                  className="p-3 bg-[#100920]/70 border border-purple-500/20 hover:border-purple-400/50 rounded-xl flex items-center justify-between transition-all group hover:-translate-y-0.5"
+                  className="p-3 liquid-glass-tool-card rounded-xl flex items-center justify-between group"
                 >
-                  <div>
-                    <div className="font-semibold text-xs text-white group-hover:text-purple-300 transition-colors">
-                      {t.shortName}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      aria-hidden="true"
+                      className="w-8 h-8 rounded-lg liquid-glass-tool-icon flex items-center justify-center shrink-0"
+                    >
+                      <span className="liquid-glass-tool-emoji text-base leading-none">
+                        {getToolEmoji(t)}
+                      </span>
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs text-white group-hover:text-purple-200 transition-colors truncate">
+                        {t.shortName}
+                      </div>
+                      <div className="text-[11px] text-slate-400 line-clamp-1">{t.tagline}</div>
                     </div>
-                    <div className="text-[11px] text-slate-400 line-clamp-1">{t.tagline}</div>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-purple-300 transition-transform group-hover:translate-x-0.5 shrink-0 ml-2" />
+                  <ArrowRight className="w-3.5 h-3.5 text-purple-300/75 group-hover:text-white transition-transform group-hover:translate-x-1 shrink-0 ml-2 motion-reduce:transform-none" />
                 </Link>
               ))}
             </div>

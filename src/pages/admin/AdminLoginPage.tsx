@@ -14,7 +14,8 @@ export function AdminLoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const queryParams = new URLSearchParams(currentPath.split('?')[1] || '');
-  const redirectTarget = queryParams.get('redirect') || '/admin';
+  const rawRedirect = queryParams.get('redirect') || '/admin';
+  const redirectTarget = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/admin';
 
   useEffect(() => {
     if (isAdmin) {

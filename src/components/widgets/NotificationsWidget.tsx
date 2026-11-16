@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, CheckCheck, Sparkles, Check, Info, ShieldCheck, Layers, X } from 'lucide-react';
+import { useRouter } from '../../context/RouterContext';
 
 export interface NotificationItem {
   id: string;
@@ -52,6 +53,7 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
 const STORAGE_KEY = 'subforge_notifications_v1';
 
 export function NotificationsWidget() {
+  const { navigate } = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
     try {
@@ -99,10 +101,14 @@ export function NotificationsWidget() {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  const markAsRead = (id: string) => {
+  const handleNotificationClick = (item: NotificationItem) => {
     setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
     );
+    if (item.actionUrl) {
+      setIsOpen(false);
+      navigate(item.actionUrl);
+    }
   };
 
   const deleteNotification = (id: string, e: React.MouseEvent) => {
@@ -188,7 +194,7 @@ export function NotificationsWidget() {
               notifications.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => markAsRead(item.id)}
+                  onClick={() => handleNotificationClick(item)}
                   className={`p-3.5 transition-colors cursor-pointer flex gap-3 items-start group ${
                     item.isRead
                       ? 'bg-transparent hover:bg-white/[0.03]'

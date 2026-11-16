@@ -106,6 +106,11 @@ export function Footer() {
             </h4>
             <ul className="space-y-2 text-xs">
               <li>
+                <Link to="/video-studio" className="hover:text-blue-400 transition-colors font-semibold text-blue-300">
+                  Video Editing Studio
+                </Link>
+              </li>
+              <li>
                 <Link to="/tools/timing-fixer" className="hover:text-blue-400 transition-colors">
                   Subtitle Timing Fixer
                 </Link>

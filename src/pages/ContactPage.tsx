@@ -8,12 +8,37 @@ export function ContactPage() {
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('Feedback');
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim() || !email.trim()) return;
-    setSubmitted(true);
+    if (!message.trim() || !email.trim() || submitting) return;
+    setErrorMsg(null);
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          subject,
+          message: message.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrorMsg(data.error || 'Could not submit your message. Please verify the fields and retry.');
+        return;
+      }
+      setSubmitted(true);
+    } catch {
+      setErrorMsg('Network error sending message. Please check your connection and retry.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -47,13 +72,14 @@ export function ContactPage() {
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
               <h2 className="text-lg font-bold text-white">Message Received!</h2>
               <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
-                Thank you for your feedback. We review user bug reports and feature suggestions to continuously improve our subtitle utilities.
+                Thank you for your feedback. Your message has been logged for review by the SubForge team.
               </p>
               <button
                 type="button"
                 onClick={() => {
                   setSubmitted(false);
                   setMessage('');
+                  setErrorMsg(null);
                 }}
                 className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold"
               >
@@ -62,6 +88,12 @@ export function ContactPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+              {errorMsg && (
+                <div className="p-3 rounded-lg bg-rose-950/50 border border-rose-700/60 text-rose-200 text-xs">
+                  {errorMsg}
+                </div>
+              )}
+
               <div>
                 <label htmlFor="contact-name" className="block text-slate-300 font-medium mb-1">
                   Your Name (Optional)
@@ -125,10 +157,10 @@ export function ContactPage() {
 
               <button
                 type="submit"
-                disabled={!message.trim() || !email.trim()}
+                disabled={submitting || !message.trim() || !email.trim()}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors"
               >
-                Send Message
+                {submitting ? 'Sending Message...' : 'Send Message'}
               </button>
             </form>
           )}

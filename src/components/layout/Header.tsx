@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion, MotionConfig } from 'motion/react';
 import { Link, useRouter } from '../../context/RouterContext';
 import { useAuth } from '../../context/AuthContext';
 import { NotificationsWidget } from '../widgets/NotificationsWidget';
@@ -20,11 +21,14 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
+  const normalizedPath = currentPath.split('?')[0].replace(/\/+$/, '') || '/';
+
   const navItems = [
     { label: 'All Tools', path: '/' },
+    { label: 'Video Studio', path: '/video-studio', emoji: '🎬' },
     { label: 'SRT to VTT', path: '/tools/srt-to-vtt' },
     { label: 'Timing Fixer', path: '/tools/timing-fixer' },
-    { label: 'AI Assistant', path: '/ai-assistant', icon: Sparkles },
+    { label: 'AI Assistant', path: '/ai-assistant', emoji: '🤖' },
     { label: 'Format Guide', path: '/guide' },
   ];
 
@@ -42,48 +46,80 @@ export function Header() {
               <span className="font-bold tracking-wider text-white text-sm sm:text-base leading-none">
                 SUBFORGE
               </span>
-              <span className="text-[6.5px] xs:text-[7.5px] sm:text-[8px] md:text-[8.5px] font-medium tracking-tight text-purple-300/80 uppercase mt-1 leading-tight line-clamp-1 max-w-[155px] xs:max-w-[230px] sm:max-w-[360px] md:max-w-none">
-                AI TOOLS, WEBSITE BUILDING, HOSTING, SEO, AND SMARTER ONLINE GROWTH START HERE.
+              <span className="text-[9px] sm:text-[9.5px] font-semibold tracking-[0.2em] text-[#B56BFF] drop-shadow-[0_0_8px_rgba(181,107,255,0.45)] uppercase mt-1 leading-none">
+                FREE AI TOOLS
               </span>
             </div>
           </Link>
 
-          {/* Center: Floating Glassmorphic Pill-Rail Navigation */}
-          <nav
-            aria-label="Primary Navigation"
-            className="hidden md:flex items-center gap-1 p-1 rounded-full bg-[#100920]/80 border border-purple-500/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-          >
-            {navItems.map((item) => {
-              const isActive = currentPath === item.path;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
-                    isActive
-                      ? 'bg-gradient-to-r from-violet-600/90 to-purple-600/90 text-white shadow-[0_0_16px_rgba(147,51,234,0.45)] font-semibold'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  {Icon && <Icon className="w-3.5 h-3.5 text-cyan-300" />}
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+          {/* Center: Liquid Glass Pill-Rail Navigation */}
+          <MotionConfig reducedMotion="user">
+            <nav
+              aria-label="Primary Navigation"
+              className="hidden md:flex items-center gap-1 p-1 rounded-full liquid-glass-nav-rail"
+            >
+              {navItems.map((item) => {
+                const isActive = normalizedPath === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`liquid-glass-nav-item px-3.5 py-1.5 rounded-full text-xs whitespace-nowrap flex items-center gap-1.5 overflow-hidden select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A855F7]/80 ${
+                      isActive
+                        ? 'text-white font-semibold'
+                        : 'text-[#F1EAFF]/80 font-medium hover:text-white hover:bg-[#A855F7]/14 hover:shadow-[0_0_16px_rgba(168,85,247,0.24)]'
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.span
+                        layoutId="subforge-liquid-glass-pill"
+                        transition={{
+                          type: 'spring',
+                          stiffness: 420,
+                          damping: 32,
+                          mass: 0.85,
+                        }}
+                        aria-hidden="true"
+                        className="liquid-glass-active-pill absolute inset-0 rounded-full pointer-events-none"
+                      >
+                        <span key={normalizedPath} className="liquid-glass-sweep" />
+                      </motion.span>
+                    )}
+                    {item.emoji && (
+                      <span aria-hidden="true" className="relative z-10 text-xs leading-none">
+                        {item.emoji}
+                      </span>
+                    )}
+                    <span className="relative z-10">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </MotionConfig>
 
-          {/* Right: Notifications, Admin Panel & Single Login Button / User Profile */}
+          {/* Right: Notifications, Compact Admin Panel Icon Button & Single Login Button / User Profile */}
           <div className="hidden sm:flex items-center gap-2.5 sm:gap-3 shrink-0">
             <NotificationsWidget />
 
-            <Link
-              to="/admin"
-              className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-full fintech-btn-secondary text-amber-300 hover:text-amber-200 text-xs font-semibold whitespace-nowrap"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-              <span>Admin Panel</span>
-            </Link>
+            <div className="relative group">
+              <Link
+                to="/admin"
+                title="Admin Panel"
+                aria-label="Admin Panel"
+                className="liquid-glass-icon-btn w-10 h-10 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A855F7]"
+              >
+                <span aria-hidden="true" className="leading-none select-none">
+                  👨‍💻
+                </span>
+              </Link>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wider text-white whitespace-nowrap bg-[#120926]/95 border border-purple-400/40 backdrop-blur-xl shadow-[0_6px_18px_rgba(0,0,0,0.6),0_0_12px_rgba(168,85,247,0.35)] opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 transition-all duration-150 z-50"
+              >
+                Admin Panel
+              </span>
+            </div>
 
             {user ? (
               <div className="relative">

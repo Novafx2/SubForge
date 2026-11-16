@@ -316,6 +316,219 @@ async function runAiTests() {
   const authContextContent = fs.readFileSync('./src/context/AuthContext.tsx', 'utf8');
   assert(authContextContent.includes("const initialRole: UserRoleType = 'user';"), 'Public signup strictly restricted to "user" role');
   assert(authContextContent.includes('claimAdminBootstrap'), 'AuthContext provides claimAdminBootstrap method');
+  assert(!authContextContent.includes('signInWithFacebook') && !authContextContent.includes('facebookProvider'), 'AuthContext removed Facebook authentication');
+
+  // 15. Login Update, AI Chatbot Integrity & Website Branding Audit
+  console.log('\n[15. Login Update, AI Chatbot & Website Branding Audit]');
+  const loginPageContent = fs.readFileSync('./src/pages/auth/LoginPage.tsx', 'utf8');
+  assert(loginPageContent.includes('Continue with Google'), 'LoginPage retains Continue with Google button');
+  assert(!/facebook/i.test(loginPageContent), 'LoginPage has completely removed Facebook login');
+
+  const firebaseLibContent = fs.readFileSync('./src/lib/firebase.ts', 'utf8');
+  assert(!/facebook/i.test(firebaseLibContent), 'Firebase config removed FacebookAuthProvider');
+
+  const chatWidgetContent = fs.readFileSync('./src/components/widgets/AiSupportChatWidget.tsx', 'utf8');
+  assert(chatWidgetContent.includes('/api/ai/chat') && chatWidgetContent.includes('/api/ai/status'), 'AiSupportChatWidget uses backend /api/ai/status and /api/ai/chat');
+  assert(chatWidgetContent.includes('AI Offline') && chatWidgetContent.includes('Retry request'), 'AiSupportChatWidget shows honest offline state and explicit error retry');
+
+  assert(adminPageContent.includes('15. Website Branding'), 'Admin Dashboard includes 15. Website Branding section');
+  assert(adminPageContent.includes('Upload Favicon') && adminPageContent.includes('Remove Favicon'), 'Website Branding includes Upload Favicon and Remove Favicon controls');
+  assert(adminPageContent.includes('Save Changes') && adminPageContent.includes('Save All Changes'), 'Admin Dashboard supports Save Changes and Save All Changes');
+
+  const indexHtmlContent = fs.readFileSync('./index.html', 'utf8');
+  assert(fs.existsSync('./public/favicon.svg'), 'SubForge default fallback favicon (/public/favicon.svg) exists');
+  assert(indexHtmlContent.includes('href="/favicon.svg"'), 'index.html configures SubForge fallback favicon');
+
+  // 16. All-in-One Video Editing Studio Audit
+  console.log('\n[16. All-in-One Video Editing Studio Audit]');
+  const { createInitialHistoryState, studioReducer } = await import('./src/lib/videoStudio/studioReducer');
+  const { getResolutionDimensions } = await import('./src/types/videoStudio');
+  const { estimateExportSizeMb } = await import('./src/lib/videoStudio/ffmpegPipeline');
+
+  let studioState = createInitialHistoryState();
+  studioState = studioReducer(studioState, {
+    type: 'ADD_CLIP',
+    clip: {
+      id: 'clip-qa-1',
+      assetId: 'asset-qa-1',
+      name: 'QA Intro.mp4',
+      timelineStartMs: 0,
+      sourceStartMs: 0,
+      sourceEndMs: 6000,
+      speed: 1,
+      rotate: 0,
+      flipH: false,
+      flipV: false,
+      crop: { top: 0, right: 0, bottom: 0, left: 0 },
+      muted: false,
+      volume: 1,
+      fadeInMs: 0,
+      fadeOutMs: 0,
+      transitionIn: 'none',
+      transitionDurationMs: 400,
+    },
+  });
+  assert(studioState.present.clips.length === 1, 'Video Studio reducer adds V1 clip cleanly');
+
+  studioState = studioReducer(studioState, { type: 'SPLIT_CLIP_AT', id: 'clip-qa-1', timelineMs: 3000 });
+  assert(studioState.present.clips.length === 2, 'Video Studio splits clip at playhead into 2 clips');
+  assert(studioState.past.length === 2, 'Video Studio pushes immutable undo history');
+
+  studioState = studioReducer(studioState, { type: 'UNDO' });
+  assert(studioState.present.clips.length === 1, 'Video Studio Undo restores pre-split timeline');
+
+  studioState = studioReducer(studioState, { type: 'REDO' });
+  assert(studioState.present.clips.length === 2, 'Video Studio Redo reapplies split');
+
+  studioState = studioReducer(studioState, { type: 'SET_ASPECT_RATIO', aspectRatio: '9:16' });
+  const dims916 = getResolutionDimensions(studioState.present.aspectRatio, '1080p');
+  assert(dims916.width === 1080 && dims916.height === 1920, '9:16 1080p export dimensions compute to 1080x1920');
+
+  const sizeEst = estimateExportSizeMb(studioState.present);
+  assert(sizeEst.endsWith('MB'), `Estimate export size computes cleanly (${sizeEst})`);
+
+  assert(fs.existsSync('./public/ffmpeg/ffmpeg-core.js') && fs.existsSync('./public/ffmpeg/ffmpeg-core.wasm'), 'Local FFmpeg WASM core assets exist in public/ffmpeg/');
+  const headerContent = fs.readFileSync('./src/components/layout/Header.tsx', 'utf8');
+  const drawerContent = fs.readFileSync('./src/components/layout/MobileDrawer.tsx', 'utf8');
+  assert(headerContent.includes("label: 'Video Studio'") && headerContent.includes("path: '/video-studio'"), 'Header includes Video Studio main nav item');
+  assert(drawerContent.includes('Video Studio') && drawerContent.includes('/video-studio'), 'MobileDrawer includes Video Studio nav item');
+  assert(appRoutesContent.includes("case '/video-studio':"), 'App.tsx registers /video-studio route');
+  assert(sitemapXml.includes('<loc>https://subforge.app/video-studio</loc>'), 'Sitemap includes /video-studio');
+
+  const serverContent = fs.readFileSync('./server.ts', 'utf8');
+  assert(serverContent.includes("'/api/ai/translate-subtitles'"), 'Server exposes /api/ai/translate-subtitles endpoint');
+
+  // Pro Studio Features Audit
+  const {
+    TRANSITION_OPTIONS,
+    WORKFLOW_PRESETS,
+    FILTER_PRESETS,
+    SUBTITLE_STYLE_PRESETS,
+    getClipDurationMs,
+    createDefaultVisualEffects,
+  } = await import('./src/types/videoStudio');
+  const { evaluateClipKeyframes, getClipSourceTimeSec } = await import('./src/lib/videoStudio/canvasCompositor');
+
+  assert(
+    TRANSITION_OPTIONS.length >= 12 &&
+      ['crossfade', 'fade-black', 'zoom-reveal', 'swipe', 'wipe', 'glitch', 'flash', 'spin', 'blur', 'slide-left', 'push'].every((id) =>
+        TRANSITION_OPTIONS.some((t) => t.id === id)
+      ),
+    'All 11 clip-to-clip Pro transitions registered in TRANSITION_OPTIONS'
+  );
+
+  assert(
+    WORKFLOW_PRESETS.length === 8 &&
+      ['cinematic', 'youtube', 'shorts', 'tiktok', 'reels', 'gaming', 'podcast', 'documentary'].every((id) =>
+        WORKFLOW_PRESETS.some((p) => p.id === id)
+      ),
+    'All 8 workflow presets (Cinematic, YouTube, Shorts, TikTok, Reels, Gaming, Podcast, Documentary) present'
+  );
+
+  assert(
+    Object.keys(FILTER_PRESETS).includes('teal-orange') &&
+      Object.keys(FILTER_PRESETS).includes('tokyo-neon') &&
+      Object.keys(SUBTITLE_STYLE_PRESETS).includes('bold-social'),
+    'LUT color presets and subtitle burn-in presets are defined'
+  );
+
+  // Test Keyframe Interpolation
+  const kfClip: any = {
+    id: 'kf-test',
+    assetId: 'a1',
+    name: 'KF',
+    timelineStartMs: 0,
+    sourceStartMs: 0,
+    sourceEndMs: 4000,
+    speed: 1,
+    rotate: 0,
+    flipH: false,
+    flipV: false,
+    crop: { top: 0, right: 0, bottom: 0, left: 0 },
+    muted: false,
+    volume: 1,
+    fadeInMs: 0,
+    fadeOutMs: 0,
+    transitionIn: 'none',
+    transitionDurationMs: 400,
+    keyframes: [
+      { id: 'k1', timeOffsetMs: 0, x: -10, y: 0, scale: 1.0, rotation: 0, opacity: 0.2, easing: 'linear' },
+      { id: 'k2', timeOffsetMs: 2000, x: 10, y: 20, scale: 2.0, rotation: 90, opacity: 1.0, easing: 'linear' },
+    ],
+  };
+  const midKf = evaluateClipKeyframes(kfClip, 1000);
+  assert(
+    Math.abs(midKf.x - 0) < 0.01 &&
+      Math.abs(midKf.scale - 1.5) < 0.01 &&
+      Math.abs(midKf.rotation - 45) < 0.01 &&
+      Math.abs(midKf.opacity - 0.6) < 0.01,
+    'evaluateClipKeyframes linearly interpolates x, scale, rotation & opacity'
+  );
+
+  // Test Speed Ramping math & bounds
+  const rampClip = { ...kfClip, speedRamp: 'ramp-up' as const };
+  const rampDur = getClipDurationMs(rampClip);
+  const rampMidSec = getClipSourceTimeSec(rampClip, Math.round(rampDur / 2));
+  assert(
+    rampDur > 0 && rampMidSec > 0 && rampMidSec < 2.0,
+    'Speed ramping compresses/warps source time progressively rather than uniformly'
+  );
+
+  // Test DUPLICATE_CLIP, RIPPLE_DELETE_CLIP, PASTE_CLIP_EFFECTS, TOGGLE_TRACK_FLAG, APPLY_WORKFLOW_PRESET
+  studioState = studioReducer(studioState, { type: 'DUPLICATE_CLIP', id: studioState.present.clips[0].id });
+  assert(studioState.present.clips.length === 3, 'DUPLICATE_CLIP clones clip on V1');
+
+  studioState = studioReducer(studioState, { type: 'APPLY_MOTION_PRESET', clipId: studioState.present.clips[0].id, preset: 'ken-burns-in' });
+  assert((studioState.present.clips[0].keyframes?.length || 0) === 2, 'APPLY_MOTION_PRESET sets clip keyframes');
+
+  studioState = studioReducer(studioState, {
+    type: 'PASTE_CLIP_EFFECTS',
+    id: studioState.present.clips[1].id,
+    effects: {
+      crop: { top: 5, right: 5, bottom: 5, left: 5 },
+      rotate: 90,
+      flipH: true,
+      flipV: false,
+      speed: 1.5,
+      speedRamp: 'uniform',
+      transitionIn: 'glitch',
+      transitionDurationMs: 600,
+      colorGrading: { ...studioState.present.colorGrading, preset: 'cyber-blue' },
+      visualEffects: createDefaultVisualEffects(),
+    },
+  });
+  assert(
+    studioState.present.clips[1].transitionIn === 'glitch' && studioState.present.clips[1].rotate === 90,
+    'PASTE_CLIP_EFFECTS copies transitions, crop, speed & transforms to target clip'
+  );
+
+  studioState = studioReducer(studioState, { type: 'RIPPLE_DELETE_CLIP', id: studioState.present.clips[1].id });
+  assert(studioState.present.clips.length === 2, 'RIPPLE_DELETE_CLIP removes clip and recomputes timeline gap');
+
+  // Test Track Lock prevents mutation
+  studioState = studioReducer(studioState, { type: 'TOGGLE_TRACK_FLAG', track: 'V1', flag: 'locked' });
+  assert(studioState.present.trackStates.V1.locked === true, 'TOGGLE_TRACK_FLAG locks V1 track');
+  const lockedCountBefore = studioState.present.clips.length;
+  studioState = studioReducer(studioState, { type: 'DELETE_CLIP', id: studioState.present.clips[0].id });
+  assert(studioState.present.clips.length === lockedCountBefore, 'Locked V1 track blocks clip deletion');
+
+  // Unlock and verify Workflow Preset application
+  studioState = studioReducer(studioState, { type: 'TOGGLE_TRACK_FLAG', track: 'V1', flag: 'locked' });
+  studioState = studioReducer(studioState, { type: 'APPLY_WORKFLOW_PRESET', presetId: 'shorts' });
+  assert(
+    studioState.present.aspectRatio === '9:16' &&
+      studioState.present.fitMode === 'contain-blur' &&
+      studioState.present.exportSettings.fps === 60,
+    'APPLY_WORKFLOW_PRESET configures aspectRatio, fitMode & FPS cleanly'
+  );
+
+  const leftPanelSrc = fs.readFileSync('./src/components/studio/StudioLeftPanel.tsx', 'utf8');
+  assert(
+    leftPanelSrc.includes('Experimental (CPU)') &&
+      leftPanelSrc.includes('CPU Pixel Pass') &&
+      leftPanelSrc.includes('Requires Mic Permission'),
+    'StudioLeftPanel clearly labels experimental, CPU-heavy, and mic-permission features'
+  );
 
   console.log(`\n=================================================`);
   console.log(`COMPLETE AUDIT RESULTS: ${passed} PASSED, ${failed} FAILED`);
@@ -324,6 +537,8 @@ async function runAiTests() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runAiTests();
+

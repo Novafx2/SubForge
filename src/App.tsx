@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { RouterProvider, useRouter } from './context/RouterContext';
 import { AuthProvider } from './context/AuthContext';
+import { BrandingProvider } from './context/BrandingContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -12,6 +14,10 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { AboutPage } from './pages/AboutPage';
 import { TermsPage } from './pages/TermsPage';
 import { ContactPage } from './pages/ContactPage';
+
+const VideoStudioPage = lazy(() =>
+  import('./pages/VideoStudioPage').then((m) => ({ default: m.VideoStudioPage }))
+);
 
 // Auth Pages
 import { LoginPage } from './pages/auth/LoginPage';
@@ -63,6 +69,18 @@ function AppRoutes() {
       return <TermsPage />;
     case '/contact':
       return <ContactPage />;
+    case '/video-studio':
+      return (
+        <Suspense
+          fallback={
+            <div className="min-h-[70vh] flex items-center justify-center text-xs text-blue-300 font-semibold">
+              Loading SubForge Video Studio...
+            </div>
+          }
+        >
+          <VideoStudioPage />
+        </Suspense>
+      );
 
     // Authentication Pages
     case '/login':
@@ -179,14 +197,16 @@ export default function App() {
   return (
     <RouterProvider>
       <AuthProvider>
-        <div className="min-h-screen flex flex-col bg-transparent text-slate-100">
-          <Header />
-          <main className="flex-1">
-            <AppRoutes />
-          </main>
-          <Footer />
-          <AiSupportChatWidget />
-        </div>
+        <BrandingProvider>
+          <div className="min-h-screen flex flex-col bg-transparent text-slate-100">
+            <Header />
+            <main className="flex-1">
+              <AppRoutes />
+            </main>
+            <Footer />
+            <AiSupportChatWidget />
+          </div>
+        </BrandingProvider>
       </AuthProvider>
     </RouterProvider>
   );

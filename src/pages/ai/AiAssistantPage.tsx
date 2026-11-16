@@ -24,11 +24,20 @@ import {
   diagnoseSubtitleQuality,
   generateSmartChapters,
   processAiPrompt,
+  runBackendAiAssist,
   AiTaskProgress,
   AiChapterItem,
   AiDiagnosticsResult,
   AiSummaryResult
 } from '../../lib/aiService';
+
+const LANG_NAMES: Record<string, string> = {
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  it: 'Italian',
+};
 
 const SAMPLE_SUBTITLE = `1
 00:00:01,000 --> 00:00:04,200
@@ -81,7 +90,7 @@ export function AiAssistantPage() {
   const runAiAction = async () => {
     if (!inputText.trim()) return;
     setProcessing(true);
-    setProgress({ status: 'Initializing in-browser AI engine...', progress: 10 });
+    setProgress({ status: 'Connecting to SubForge AI engine...', progress: 20 });
     setChangeNotes([]);
     setSummaryData(null);
     setDiagnosticsData(null);
@@ -89,24 +98,63 @@ export function AiAssistantPage() {
 
     try {
       if (activeTab === 'grammar') {
-        const res = await improveSubtitleGrammar(inputText, setProgress);
-        setOutputText(res.improvedText);
-        setChangeNotes(res.explanations);
+        const live = await runBackendAiAssist<{ improvedText: string; explanations: string[] }>({
+          task: 'grammar',
+          content: inputText,
+        });
+        if (live.ok) {
+          setOutputText(live.result.improvedText);
+          setChangeNotes([`Processed via ${live.provider}`, ...live.result.explanations]);
+        } else {
+          const res = await improveSubtitleGrammar(inputText, setProgress);
+          setOutputText(res.improvedText);
+          setChangeNotes([
+            `Local Browser Fallback (${live.error})`,
+            ...res.explanations,
+          ]);
+        }
       } else if (activeTab === 'translate') {
-        const res = await translateSubtitleText(inputText, targetLang, setProgress);
-        setOutputText(res.translatedText);
-        setChangeNotes([
-          `Preserved timing codes and translated dialogue into ${targetLang.toUpperCase()}.`,
-          `Analyzed and processed ${res.wordCount} words.`
-        ]);
+        const live = await runBackendAiAssist<{ translatedText: string; wordCount: number }>({
+          task: 'translate',
+          content: inputText,
+          targetLang,
+          targetLangName: LANG_NAMES[targetLang] || targetLang,
+        });
+        if (live.ok) {
+          setOutputText(live.result.translatedText);
+          setChangeNotes([
+            `Translated via ${live.provider} into ${LANG_NAMES[targetLang] || targetLang.toUpperCase()}.`,
+            `Preserved subtitle timestamps and processed ${live.result.wordCount} words.`,
+          ]);
+        } else {
+          const res = await translateSubtitleText(inputText, targetLang, setProgress);
+          setOutputText(res.translatedText);
+          setChangeNotes([
+            `Local Dictionary Fallback (${live.error})`,
+            `Preserved timing codes and processed ${res.wordCount} words.`,
+          ]);
+        }
       } else if (activeTab === 'summary') {
-        const res = await summarizeSubtitleCues(inputText, setProgress);
+        const live = await runBackendAiAssist<AiSummaryResult>({
+          task: 'summary',
+          content: inputText,
+        });
+        const res = live.ok ? live.result : await summarizeSubtitleCues(inputText, setProgress);
         setSummaryData(res);
         setOutputText(
           `## Executive Summary\n${res.summary}\n\n## Key Takeaways\n${res.bulletPoints.map((b) => `• ${b}`).join('\n')}\n\n## Main Topics\n${res.topics.join(', ')}`
         );
+        setChangeNotes([
+          live.ok
+            ? `Summarized via ${live.provider}`
+            : `Local Extractive Summary (${live.error})`,
+        ]);
       } else if (activeTab === 'diagnose') {
-        const res = await diagnoseSubtitleQuality(inputText, setProgress);
+        const live = await runBackendAiAssist<AiDiagnosticsResult>({
+          task: 'diagnose',
+          content: inputText,
+        });
+        const res = live.ok ? live.result : await diagnoseSubtitleQuality(inputText, setProgress);
         setDiagnosticsData(res);
         const report = res.insights
           .map((i) => `[${i.type.toUpperCase()}] ${i.title}\n${i.description}\nSuggested Fix: ${i.fixSuggestion}\n`)
@@ -114,6 +162,11 @@ export function AiAssistantPage() {
         setOutputText(
           `SubForge Accessibility Score: ${res.qualityScore}/100\nIssues Identified: ${res.issueCount}\n\n${report}`
         );
+        setChangeNotes([
+          live.ok
+            ? `Audited via ${live.provider}`
+            : `Local Broadcast Rules Audit (${live.error})`,
+        ]);
       } else if (activeTab === 'chapters') {
         const res = await generateSmartChapters(inputText, chapterInterval, setProgress);
         setChaptersData(res);
@@ -122,17 +175,31 @@ export function AiAssistantPage() {
         const isLive = res[0]?.source === 'gemini-ai';
         setChangeNotes([
           isLive
-            ? `Generated with ${res[0]?.provider || 'Google Gemini 3.8 Flash'}`
+            ? `Generated with ${res[0]?.provider || 'Google Gemini AI'}`
             : 'Generated via Local Subtitle Detection Engine (Offline Mode)',
           `Verified ${res.length} compliant YouTube chapters (00:00 start, >= 10s gap).`,
         ]);
       } else if (activeTab === 'custom') {
-        const result = await processAiPrompt(customPrompt || 'Improve grammar and clean speech', inputText, setProgress);
-        setOutputText(result);
-        setChangeNotes(['Executed creator custom prompt transformation across all subtitle cues.']);
+        const promptToUse = customPrompt || 'Improve grammar and clean speech';
+        const live = await runBackendAiAssist<{ outputText: string }>({
+          task: 'custom',
+          content: inputText,
+          customPrompt: promptToUse,
+        });
+        if (live.ok) {
+          setOutputText(live.result.outputText);
+          setChangeNotes([`Executed custom prompt via ${live.provider}.`]);
+        } else {
+          const result = await processAiPrompt(promptToUse, inputText, setProgress);
+          setOutputText(result);
+          setChangeNotes([
+            `Local Rule Engine Fallback (${live.error})`,
+            'Executed local transformation across subtitle cues.',
+          ]);
+        }
       }
     } catch {
-      setChangeNotes(['An error occurred during local processing. Please check your subtitle syntax.']);
+      setChangeNotes(['An error occurred during AI processing. Please check your subtitle syntax.']);
     } finally {
       setProcessing(false);
       setProgress(null);

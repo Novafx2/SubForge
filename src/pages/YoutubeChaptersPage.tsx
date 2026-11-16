@@ -180,7 +180,7 @@ export function YoutubeChaptersPage() {
             setChapters(data.chapters);
             setGenerationInfo({
               isLiveAi: data.isLiveAi ?? false,
-              provider: data.provider || (data.isLiveAi ? 'Google Gemini 3.8 Flash' : 'SubForge Offline Subtitle Engine'),
+              provider: data.provider || (data.isLiveAi ? 'Google Gemini AI' : 'SubForge Offline Subtitle Engine'),
               notice: data.fallbackNotice,
             });
             setIsGenerating(false);
@@ -240,7 +240,7 @@ export function YoutubeChaptersPage() {
                   disabled={isGenerating}
                   onClick={() => handleImportFromSubtitles(lastUploadedContent || SAMPLE_SRT, true)}
                   className="px-2.5 py-1 rounded-full glass-pill-btn text-[11px] text-white flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  title="Generate chapters using Google Gemini 3.8 Flash"
+                  title="Generate chapters using Google Gemini AI"
                 >
                   <Sparkles className="w-3 h-3 text-cyan-300" />
                   <span>AI Chapters (Gemini)</span>
@@ -301,8 +301,8 @@ export function YoutubeChaptersPage() {
                     </span>
                     <p className="text-[11px] text-slate-300 mt-0.5">
                       {generationInfo.isLiveAi
-                        ? 'Synthesized by Google Gemini 3.8 Flash'
-                        : 'Generated via Local Subtitle Detection Engine'}
+                        ? `Synthesized by ${generationInfo.provider}`
+                        : generationInfo.notice || 'Generated via Local Subtitle Detection Engine'}
                     </p>
                   </div>
                 </div>

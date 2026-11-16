@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import crypto from 'crypto';
 import path from 'path';
@@ -9,12 +10,108 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '5mb' }));
+
+// ============================================================================
+// PERSISTENT STORAGE DIRECTORY (.subforge-data/)
+// ============================================================================
+const DATA_DIR = path.resolve(__dirname, '.subforge-data');
+const SETTINGS_FILE = path.join(DATA_DIR, 'site-settings.json');
+const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.json');
+const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session.secret');
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+interface PersistedBranding {
+  customFaviconDataUrl: string | null;
+  customFaviconMimeType: string | null;
+  customFaviconName: string | null;
+  siteName?: string;
+  updatedAt: string | null;
+}
+
+interface PersistedFeedbackItem {
+  id: string;
+  name?: string;
+  email: string;
+  subject: string;
+  message: string;
+  date: string;
+  status: 'unread' | 'reviewed' | 'resolved';
+}
+
+interface PersistedSiteSettings {
+  branding: PersistedBranding;
+  adminConfig?: Record<string, any>;
+  adminSecurity?: {
+    passwordHash?: string;
+    updatedAt?: string;
+  };
+  updatedAt: string | null;
+}
+
+const DEFAULT_BRANDING: PersistedBranding = {
+  customFaviconDataUrl: null,
+  customFaviconMimeType: null,
+  customFaviconName: null,
+  siteName: 'SubForge',
+  updatedAt: null,
+};
+
+function readSiteSettings(): PersistedSiteSettings {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      return {
+        branding: { ...DEFAULT_BRANDING, ...(parsed.branding || {}) },
+        adminConfig: parsed.adminConfig || undefined,
+        adminSecurity: parsed.adminSecurity || undefined,
+        updatedAt: parsed.updatedAt || null,
+      };
+    }
+  } catch (err) {
+    console.warn('Failed to read site settings from disk:', err);
+  }
+  return { branding: { ...DEFAULT_BRANDING }, updatedAt: null };
+}
+
+function writeSiteSettings(next: PersistedSiteSettings) {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Could not persist site settings to disk:', err);
+  }
+}
+
+function getOrCreateSessionSecret(): string {
+  if (process.env.ADMIN_SESSION_SECRET && process.env.ADMIN_SESSION_SECRET.trim()) {
+    return process.env.ADMIN_SESSION_SECRET.trim();
+  }
+  try {
+    if (fs.existsSync(SESSION_SECRET_FILE)) {
+      const existing = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
+      if (existing.length >= 32) return existing;
+    }
+    ensureDataDir();
+    const generated = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(SESSION_SECRET_FILE, generated, { mode: 0o600 });
+    return generated;
+  } catch {
+    return crypto.randomBytes(32).toString('hex');
+  }
+}
 
 // ============================================================================
 // SERVER-SIDE ADMIN AUTHENTICATION (Salted scrypt + HMAC-SHA256 HttpOnly Cookie)
 // ============================================================================
-const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET = getOrCreateSessionSecret();
 const COOKIE_NAME = 'subforge_admin_session';
 
 function hashPassword(password: string, salt?: string): string {
@@ -32,9 +129,24 @@ function verifyPassword(password: string, storedHash: string): boolean {
   return crypto.timingSafeEqual(keyBuf, derivedBuf);
 }
 
-// Initial administrator credentials (hashed in memory, never stored in plaintext)
-let adminUsername = process.env.ADMIN_USERNAME || 'hamza2007';
-let adminPasswordHash = process.env.ADMIN_PASSWORD_HASH || hashPassword('hamza2007');
+// Initial administrator credentials (persisted hash > env hash > bootstrap default)
+const adminUsername = process.env.ADMIN_USERNAME || 'SubForgeAdmin';
+const persistedSettingsAtBoot = readSiteSettings();
+let adminPasswordHash =
+  persistedSettingsAtBoot.adminSecurity?.passwordHash ||
+  process.env.ADMIN_PASSWORD_HASH ||
+  hashPassword('hamza2007');
+
+function isHttpsRequest(req: express.Request): boolean {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const protoStr = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+  return Boolean(req.secure || (protoStr && protoStr.split(',')[0].trim() === 'https'));
+}
+
+function buildSessionCookieHeader(req: express.Request, value: string, maxAgeSeconds: number): string {
+  const securePart = isHttpsRequest(req) ? '; Secure' : '';
+  return `${COOKIE_NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${securePart}`;
+}
 
 function createSessionToken(username: string): string {
   const payload = Buffer.from(
@@ -93,6 +205,15 @@ function requireAdminMiddleware(req: express.Request, res: express.Response, nex
   next();
 }
 
+function verifyBootstrapSecret(provided: string): boolean {
+  const expected = process.env.ADMIN_BOOTSTRAP_SECRET?.trim();
+  if (!expected) return false;
+  const providedBuf = Buffer.from(provided.trim());
+  const expectedBuf = Buffer.from(expected);
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
+}
+
 // POST /api/admin/login
 app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -110,11 +231,33 @@ app.post('/api/admin/login', (req, res) => {
   }
 
   const token = createSessionToken(adminUsername);
-  res.setHeader(
-    'Set-Cookie',
-    `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200`
-  );
+  res.setHeader('Set-Cookie', buildSessionCookieHeader(req, encodeURIComponent(token), 43200));
   return res.json({ authenticated: true, username: adminUsername, role: 'admin' });
+});
+
+// POST /api/admin/bootstrap - Claim admin session using server ADMIN_BOOTSTRAP_SECRET
+app.post('/api/admin/bootstrap', (req, res) => {
+  if (!process.env.ADMIN_BOOTSTRAP_SECRET?.trim()) {
+    return res.status(503).json({
+      error: 'ADMIN_BOOTSTRAP_SECRET is not configured in server environment variables.',
+    });
+  }
+  const { secretKey } = req.body || {};
+  if (typeof secretKey !== 'string' || !secretKey.trim()) {
+    return res.status(400).json({ error: 'Bootstrap secret key is required.' });
+  }
+  if (!verifyBootstrapSecret(secretKey)) {
+    return res.status(401).json({ error: 'Invalid ADMIN_BOOTSTRAP_SECRET.' });
+  }
+
+  const token = createSessionToken(adminUsername);
+  res.setHeader('Set-Cookie', buildSessionCookieHeader(req, encodeURIComponent(token), 43200));
+  return res.json({
+    authenticated: true,
+    username: adminUsername,
+    role: 'admin',
+    message: 'Administrator bootstrap session verified.',
+  });
 });
 
 // GET /api/admin/session
@@ -128,10 +271,24 @@ app.get('/api/admin/session', (req, res) => {
 });
 
 // POST /api/admin/logout
-app.post('/api/admin/logout', (_req, res) => {
-  res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+app.post('/api/admin/logout', (req, res) => {
+  res.setHeader('Set-Cookie', buildSessionCookieHeader(req, '', 0));
   return res.json({ ok: true });
 });
+
+function persistAdminPasswordHash(newHash: string) {
+  adminPasswordHash = newHash;
+  const current = readSiteSettings();
+  const now = new Date().toISOString();
+  writeSiteSettings({
+    ...current,
+    adminSecurity: {
+      passwordHash: newHash,
+      updatedAt: now,
+    },
+    updatedAt: now,
+  });
+}
 
 // POST /api/admin/change-password
 app.post('/api/admin/change-password', requireAdminMiddleware, (req, res) => {
@@ -142,56 +299,371 @@ app.post('/api/admin/change-password', requireAdminMiddleware, (req, res) => {
   if (!verifyPassword(currentPassword, adminPasswordHash)) {
     return res.status(401).json({ error: 'Current password is incorrect.' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
   }
-  adminPasswordHash = hashPassword(newPassword);
-  return res.json({ ok: true, message: 'Administrator password updated.' });
+  persistAdminPasswordHash(hashPassword(newPassword));
+  return res.json({ ok: true, message: 'Administrator password updated and persisted.' });
+});
+
+// POST /api/admin/rotate-password - Rotate password via ADMIN_BOOTSTRAP_SECRET
+app.post('/api/admin/rotate-password', requireAdminMiddleware, (req, res) => {
+  if (!process.env.ADMIN_BOOTSTRAP_SECRET?.trim()) {
+    return res.status(503).json({
+      error: 'ADMIN_BOOTSTRAP_SECRET is not configured in server environment variables.',
+    });
+  }
+  const { bootstrapSecretKey, newPassword } = req.body || {};
+  if (typeof bootstrapSecretKey !== 'string' || typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'Bootstrap secret key and new password are required.' });
+  }
+  if (!verifyBootstrapSecret(bootstrapSecretKey)) {
+    return res.status(401).json({ error: 'Invalid ADMIN_BOOTSTRAP_SECRET.' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  }
+  persistAdminPasswordHash(hashPassword(newPassword));
+  return res.json({ ok: true, message: 'Administrator credentials rotated and persisted successfully!' });
+});
+
+const ALLOWED_FAVICON_MIME_TYPES = new Set([
+  'image/png',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'image/svg+xml',
+]);
+
+function validateFaviconPayload(dataUrl: unknown, mimeType: unknown, fileName: unknown): { ok: true; dataUrl: string; mimeType: string; fileName: string } | { ok: false; error: string } {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    return { ok: false, error: 'Invalid favicon data URL.' };
+  }
+  if (dataUrl.length > 2_000_000) {
+    return { ok: false, error: 'Favicon file is too large. Please upload an icon under 1.5 MB.' };
+  }
+  const match = dataUrl.match(/^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) {
+    return { ok: false, error: 'Favicon must be a valid base64-encoded PNG, ICO, or SVG file.' };
+  }
+  const detectedMime = match[1].toLowerCase();
+  const normalizedMime = typeof mimeType === 'string' && ALLOWED_FAVICON_MIME_TYPES.has(mimeType.toLowerCase())
+    ? mimeType.toLowerCase()
+    : detectedMime;
+
+  if (!ALLOWED_FAVICON_MIME_TYPES.has(normalizedMime) && !ALLOWED_FAVICON_MIME_TYPES.has(detectedMime)) {
+    return { ok: false, error: 'Unsupported favicon format. Allowed types: PNG, ICO, or SVG.' };
+  }
+
+  const safeName = typeof fileName === 'string' && fileName.trim()
+    ? fileName.trim().slice(0, 120)
+    : 'custom-favicon';
+
+  return {
+    ok: true,
+    dataUrl,
+    mimeType: ALLOWED_FAVICON_MIME_TYPES.has(detectedMime) ? detectedMime : normalizedMime,
+    fileName: safeName,
+  };
+}
+
+// Serve uploaded custom favicon at /favicon.ico or fallback to SubForge /public/favicon.svg
+app.get('/favicon.ico', (_req, res) => {
+  const settings = readSiteSettings();
+  const customUrl = settings.branding.customFaviconDataUrl;
+  if (customUrl) {
+    const match = customUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      const mime = match[1];
+      const buf = Buffer.from(match[2], 'base64');
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      return res.send(buf);
+    }
+  }
+  const fallbackSvg = path.resolve(__dirname, 'public', 'favicon.svg');
+  if (fs.existsSync(fallbackSvg)) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    return res.sendFile(fallbackSvg);
+  }
+  return res.status(404).end();
+});
+
+// Public endpoint to retrieve current website branding (favicon & site name)
+app.get('/api/branding', (_req, res) => {
+  const settings = readSiteSettings();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(settings.branding);
+});
+
+// Admin endpoint to upload/save custom favicon
+app.post('/api/admin/branding', requireAdminMiddleware, (req, res) => {
+  const { faviconDataUrl, faviconMimeType, faviconFileName, siteName } = req.body || {};
+  const validated = validateFaviconPayload(faviconDataUrl, faviconMimeType, faviconFileName);
+  if (!validated.ok) {
+    return res.status(400).json({ error: validated.error });
+  }
+
+  const current = readSiteSettings();
+  const now = new Date().toISOString();
+  const updatedBranding: PersistedBranding = {
+    customFaviconDataUrl: validated.dataUrl,
+    customFaviconMimeType: validated.mimeType,
+    customFaviconName: validated.fileName,
+    siteName: typeof siteName === 'string' && siteName.trim() ? siteName.trim().slice(0, 80) : current.branding.siteName || 'SubForge',
+    updatedAt: now,
+  };
+  writeSiteSettings({
+    ...current,
+    branding: updatedBranding,
+    updatedAt: now,
+  });
+
+  return res.json({ ok: true, branding: updatedBranding });
+});
+
+// Admin endpoint to remove custom favicon and revert to SubForge fallback
+app.delete('/api/admin/branding', requireAdminMiddleware, (_req, res) => {
+  const current = readSiteSettings();
+  const now = new Date().toISOString();
+  const updatedBranding: PersistedBranding = {
+    ...DEFAULT_BRANDING,
+    siteName: current.branding.siteName || 'SubForge',
+    updatedAt: now,
+  };
+  writeSiteSettings({
+    ...current,
+    branding: updatedBranding,
+    updatedAt: now,
+  });
+
+  return res.json({ ok: true, branding: updatedBranding });
+});
+
+// Admin endpoints to persist & load all Admin Dashboard settings ("Save All Changes")
+app.get('/api/admin/settings', requireAdminMiddleware, (_req, res) => {
+  const settings = readSiteSettings();
+  return res.json({
+    branding: settings.branding,
+    adminConfig: settings.adminConfig,
+    updatedAt: settings.updatedAt,
+  });
+});
+
+app.post('/api/admin/settings', requireAdminMiddleware, (req, res) => {
+  const { branding, adminConfig } = req.body || {};
+  const current = readSiteSettings();
+  const now = new Date().toISOString();
+
+  let nextBranding = current.branding;
+  if (branding && typeof branding === 'object') {
+    if (branding.customFaviconDataUrl === null) {
+      nextBranding = {
+        ...DEFAULT_BRANDING,
+        siteName: typeof branding.siteName === 'string' ? branding.siteName.slice(0, 80) : current.branding.siteName || 'SubForge',
+        updatedAt: now,
+      };
+    } else if (typeof branding.customFaviconDataUrl === 'string') {
+      const validated = validateFaviconPayload(
+        branding.customFaviconDataUrl,
+        branding.customFaviconMimeType,
+        branding.customFaviconName
+      );
+      if (!validated.ok) {
+        return res.status(400).json({ error: validated.error });
+      }
+      nextBranding = {
+        customFaviconDataUrl: validated.dataUrl,
+        customFaviconMimeType: validated.mimeType,
+        customFaviconName: validated.fileName,
+        siteName: typeof branding.siteName === 'string' ? branding.siteName.slice(0, 80) : current.branding.siteName || 'SubForge',
+        updatedAt: now,
+      };
+    } else if (typeof branding.siteName === 'string' && branding.siteName.trim()) {
+      nextBranding = {
+        ...current.branding,
+        siteName: branding.siteName.trim().slice(0, 80),
+        updatedAt: now,
+      };
+    }
+  }
+
+  const nextSettings: PersistedSiteSettings = {
+    ...current,
+    branding: nextBranding,
+    adminConfig: adminConfig && typeof adminConfig === 'object' ? adminConfig : current.adminConfig,
+    updatedAt: now,
+  };
+  writeSiteSettings(nextSettings);
+
+  return res.json({
+    ok: true,
+    settings: {
+      branding: nextSettings.branding,
+      adminConfig: nextSettings.adminConfig,
+      updatedAt: nextSettings.updatedAt,
+    },
+  });
+});
+
+// Public site health & configuration endpoints
+app.get('/api/health', (_req, res) => {
+  const aiConfigured = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+  return res.json({
+    ok: true,
+    status: 'healthy',
+    service: 'subforge',
+    aiConfigured,
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/site-config', (_req, res) => {
+  const settings = readSiteSettings();
+  const cfg = settings.adminConfig || {};
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    branding: settings.branding,
+    contentConfig: cfg.contentConfig || null,
+    generalConfig: cfg.generalConfig || null,
+    toolSettings: cfg.toolSettings || null,
+    adsConfig: cfg.adsConfig || null,
+  });
 });
 
 // ============================================================================
-// AI SUPPORT CHAT ENDPOINT (Gemini 2.5 Flash with graceful offline fallback)
+// CONTACT & FEEDBACK SUBMISSIONS (.subforge-data/feedback.json)
 // ============================================================================
-function getLocalToolGuidance(query: string): string {
-  const q = query.toLowerCase();
-  if (q.includes('vtt') && q.includes('srt')) {
-    return 'To convert between SRT and WebVTT, visit either our SRT to VTT or VTT to SRT tool. Both tools operate 100% in-browser, preserve millisecond cue timing, and offer options to strip styling tags.';
+const DEFAULT_FEEDBACK_SEED: PersistedFeedbackItem[] = [
+  {
+    id: 'fb-1',
+    name: 'Indie Film Director',
+    email: 'director@indiefilm.org',
+    subject: 'Subtitle Merger Feedback',
+    message: 'The bilingual dual-language merger saved our team hours on foreign festival subtitling!',
+    date: '2026-11-02 08:30 UTC',
+    status: 'reviewed',
+  },
+  {
+    id: 'fb-2',
+    name: 'Creator Support',
+    email: 'creator@youtube.com',
+    subject: 'Feature Request: 120 FPS',
+    message: 'Could you add 120 FPS support in the FPS converter for high-framerate action cameras?',
+    date: '2026-11-02 10:15 UTC',
+    status: 'unread',
+  },
+  {
+    id: 'fb-3',
+    name: 'Accessibility Lead',
+    email: 'accessibility@edutech.edu',
+    subject: 'Validator Rule Inquiry',
+    message: 'The 37 characters per line warning was extremely helpful for our WCAG AAA compliance checks.',
+    date: '2026-11-02 11:20 UTC',
+    status: 'resolved',
+  },
+];
+
+function readFeedbackList(): PersistedFeedbackItem[] {
+  try {
+    if (fs.existsSync(FEEDBACK_FILE)) {
+      const raw = fs.readFileSync(FEEDBACK_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.warn('Failed to read feedback file:', err);
   }
-  if (q.includes('drift') || q.includes('fps') || q.includes('framerate') || q.includes('23.976') || q.includes('24') || q.includes('25')) {
-    return 'Gradual audio-video drift is typically caused by framerate differences (e.g. 23.976 fps film to 25 fps PAL broadcast). Use our Subtitle FPS Converter to rescale cue timestamps automatically.';
-  }
-  if (q.includes('sync') || q.includes('delay') || q.includes('shift') || q.includes('timing')) {
-    return 'To fix out-of-sync subtitles, use the Subtitle Timing Fixer. You can shift captions forward or backward with millisecond accuracy or apply a drift ratio.';
-  }
-  if (q.includes('youtube') || q.includes('chapter') || q.includes('timestamp')) {
-    return 'Our YouTube Chapters Generator formats video timestamps that satisfy YouTube requirements: starts at 00:00, at least 3 chapters, and minimum 10-second spacing. You can also auto-detect chapters from uploaded subtitles.';
-  }
-  if (q.includes('validator') || q.includes('error') || q.includes('overlap') || q.includes('cps')) {
-    return 'The Subtitle Syntax Validator audits files for overlapping timestamps, zero durations, and reading speed violations (CPS > 25). It includes a 1-click Auto-Fix button.';
-  }
-  if (q.includes('merge') || q.includes('dual') || q.includes('bilingual')) {
-    return 'The Subtitle Merger combines two subtitle files into either a sequential timeline or a simultaneous dual-language bilingual track for localization.';
-  }
-  if (q.includes('text') || q.includes('extract') || q.includes('transcript')) {
-    return 'The Subtitle Text Extractor removes timestamps, numbers, and sound effects to produce clean readable prose paragraphs or lines.';
-  }
-  return 'SubForge offers 8 professional in-browser creator utilities: SRT to VTT, VTT to SRT, Timing Fixer, FPS Converter, Syntax Validator, Text Extractor, Bilingual Merger, and YouTube Chapters Generator. All processing occurs 100% locally in your browser with zero server uploads.';
+  return [...DEFAULT_FEEDBACK_SEED];
 }
 
+function writeFeedbackList(items: PersistedFeedbackItem[]) {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(items, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('Failed to persist feedback file:', err);
+  }
+}
+
+app.post('/api/contact', (req, res) => {
+  const { name, email, subject, message } = req.body || {};
+  const cleanEmail = typeof email === 'string' ? email.trim() : '';
+  const cleanMessage = typeof message === 'string' ? message.trim() : '';
+  const cleanSubject = typeof subject === 'string' && subject.trim() ? subject.trim().slice(0, 120) : 'Feedback';
+  const cleanName = typeof name === 'string' ? name.trim().slice(0, 100) : '';
+
+  if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Please provide a valid email address.' });
+  }
+  if (!cleanMessage || cleanMessage.length < 5) {
+    return res.status(400).json({ error: 'Please enter a message of at least 5 characters.' });
+  }
+  if (cleanMessage.length > 5000) {
+    return res.status(400).json({ error: 'Message exceeds the 5,000 character limit.' });
+  }
+
+  const list = readFeedbackList();
+  const entry: PersistedFeedbackItem = {
+    id: `fb-${Date.now().toString(36)}`,
+    ...(cleanName ? { name: cleanName } : {}),
+    email: cleanEmail.slice(0, 160),
+    subject: cleanSubject,
+    message: cleanMessage,
+    date: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+    status: 'unread',
+  };
+  writeFeedbackList([entry, ...list].slice(0, 500));
+
+  return res.status(201).json({ ok: true, id: entry.id, message: 'Feedback received successfully.' });
+});
+
+app.get('/api/admin/feedback', requireAdminMiddleware, (_req, res) => {
+  return res.json({ items: readFeedbackList() });
+});
+
+app.patch('/api/admin/feedback/:id', requireAdminMiddleware, (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body || {};
+  if (!['unread', 'reviewed', 'resolved'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value.' });
+  }
+  const list = readFeedbackList();
+  const idx = list.findIndex((item) => item.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Feedback entry not found.' });
+  }
+  list[idx] = { ...list[idx], status };
+  writeFeedbackList(list);
+  return res.json({ ok: true, item: list[idx] });
+});
+
+app.delete('/api/admin/feedback/:id', requireAdminMiddleware, (req, res) => {
+  const { id } = req.params;
+  const list = readFeedbackList();
+  const next = list.filter((item) => item.id !== id);
+  writeFeedbackList(next);
+  return res.json({ ok: true });
+});
+
 // ============================================================================
-// AI SUPPORT & YOUTUBE CHAPTERS ENGINE (Gemini 3.8 Flash + Resilient 35s Timeout & 2 Retries)
+// AI SUPPORT & YOUTUBE CHAPTERS ENGINE (Gemini 3.8 Flash + Fallback Model + Retry)
 // ============================================================================
 interface GeminiCallOptions {
   systemInstruction?: string;
-  timeoutMs?: number; // default 35000 (35s)
+  timeoutMs?: number; // default 40000 (40s)
   maxRetries?: number; // default 2
 }
+
+type GeminiContentPart = { text: string };
+type GeminiTurn = { role: 'user' | 'model'; parts: GeminiContentPart[] };
 
 // In-flight request deduplication map to prevent repeated concurrent calls
 const inFlightRequests = new Map<string, Promise<{ text: string; model: string }>>();
 
 async function callGeminiWithRetry(
-  prompt: string,
+  promptOrContents: string | GeminiTurn[],
   options: GeminiCallOptions = {}
 ): Promise<{ text: string; model: string }> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -203,9 +675,11 @@ async function callGeminiWithRetry(
   const maxRetries = options.maxRetries ?? 2;
 
   // Deduplication cache key
+  const serializedPrompt =
+    typeof promptOrContents === 'string' ? promptOrContents : JSON.stringify(promptOrContents);
   const cacheKey = crypto
     .createHash('sha256')
-    .update(`${options.systemInstruction || ''}:::${prompt}`)
+    .update(`${options.systemInstruction || ''}:::${serializedPrompt}`)
     .digest('hex');
 
   const existing = inFlightRequests.get(cacheKey);
@@ -226,8 +700,8 @@ async function callGeminiWithRetry(
     });
 
     const candidateModels = [
-      { id: 'gemini-3.8-flash', label: 'Google Gemini 3.8 Flash', thinking: true },
-      { id: 'gemini-3.1-flash-lite', label: 'Google Gemini 3.1 Flash Lite', thinking: false },
+      { id: 'gemini-4-hydrogen', label: 'Google Gemini AI (Flash)', thinking: true },
+      { id: 'gemini-3.1-flash-lite', label: 'Google Gemini AI (Flash Lite)', thinking: false },
     ];
 
     let lastError: any = null;
@@ -252,7 +726,7 @@ async function callGeminiWithRetry(
 
           const apiPromise = ai.models.generateContent({
             model: targetModel.id,
-            contents: prompt,
+            contents: promptOrContents,
             config: Object.keys(config).length > 0 ? config : undefined,
           });
 
@@ -454,46 +928,116 @@ function extractOfflineChaptersFromSubtitles(content: string): ParsedChapter[] {
   return chapters;
 }
 
-// POST /api/ai/chat
+// GET /api/ai/status - Honest AI backend status check (no fake online claims)
+app.get('/api/ai/status', (_req, res) => {
+  const hasKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
+  return res.json({
+    configured: hasKey,
+    online: hasKey,
+    provider: hasKey ? 'Google Gemini AI (Backend)' : null,
+  });
+});
+
+// POST /api/ai/chat - Multi-turn AI chatbot powered by Gemini on the backend
 app.post('/api/ai/chat', async (req, res) => {
   const { messages, message } = req.body || {};
-  const userPrompt = (message || (Array.isArray(messages) && messages[messages.length - 1]?.content) || '').trim();
-  if (!userPrompt) {
-    return res.status(400).json({ error: 'Message content is required.' });
+
+  // Build normalized conversation history
+  const conversationTurns: GeminiTurn[] = [];
+  if (Array.isArray(messages)) {
+    for (const item of messages.slice(-14)) {
+      const rawText = typeof item?.text === 'string' ? item.text : typeof item?.content === 'string' ? item.content : '';
+      const trimmed = rawText.trim();
+      if (!trimmed) continue;
+      const role: 'user' | 'model' =
+        item?.role === 'user' || item?.sender === 'user' ? 'user' : 'model';
+      // Ensure alternating turns cleanly for Gemini contents array
+      if (conversationTurns.length === 0 && role === 'model') {
+        continue; // Skip leading welcome greeting so conversation begins with user turn
+      }
+      const prev = conversationTurns[conversationTurns.length - 1];
+      if (prev && prev.role === role) {
+        prev.parts[0].text += `\n\n${trimmed}`;
+      } else {
+        conversationTurns.push({ role, parts: [{ text: trimmed }] });
+      }
+    }
+  }
+
+  const explicitMessage = typeof message === 'string' ? message.trim() : '';
+  if (explicitMessage) {
+    const prev = conversationTurns[conversationTurns.length - 1];
+    if (prev && prev.role === 'user') {
+      if (prev.parts[0].text !== explicitMessage) {
+        prev.parts[0].text = explicitMessage;
+      }
+    } else {
+      conversationTurns.push({ role: 'user', parts: [{ text: explicitMessage }] });
+    }
+  }
+
+  if (conversationTurns.length === 0 || conversationTurns[conversationTurns.length - 1].role !== 'user') {
+    return res.status(400).json({
+      error: 'Message content is required.',
+      isLiveAi: false,
+      offline: false,
+    });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    const localHelp = getLocalToolGuidance(userPrompt);
-    return res.json({
+  if (!apiKey || !apiKey.trim()) {
+    return res.status(503).json({
       configured: false,
       isLiveAi: false,
-      provider: 'SubForge Offline Knowledge Engine',
-      message: `${localHelp}\n\n[Note: Live LLM generation is currently offline because GEMINI_API_KEY is not set in the server environment. Add GEMINI_API_KEY to enable full conversational AI.]`,
+      offline: true,
+      error: 'AI chatbot is currently offline because the server AI API key is not configured.',
     });
   }
 
   try {
-    const result = await callGeminiWithRetry(userPrompt, {
+    const result = await callGeminiWithRetry(conversationTurns, {
       systemInstruction:
-        'You are the SubForge AI Support Engineer. SubForge is an in-browser platform providing 8 core video creator utilities: SRT to VTT Converter, VTT to SRT Converter, Subtitle Timing Fixer, Subtitle FPS Converter, Subtitle Syntax Validator, Subtitle Text Extractor, Subtitle Merger (Bilingual), and YouTube Chapters Generator. The platform operates 100% client-side with zero server file uploads. Provide concise, expert advice on subtitle formatting, framerate sync (23.976 to 25 fps, 29.97 fps), WCAG accessibility standards, and video SEO. Keep answers professional, practical, and under 3 paragraphs.',
-      timeoutMs: 35000,
+        'You are the SubForge AI Support & Video Editing Specialist. SubForge is a browser-based creator studio providing 8 privacy-first utilities: SRT to VTT Converter (/tools/srt-to-vtt), VTT to SRT Converter (/tools/vtt-to-srt), Subtitle Timing Fixer (/tools/timing-fixer), Subtitle FPS Converter (/tools/fps-converter), Subtitle Syntax Validator (/tools/validator), Subtitle Text Extractor (/tools/text-extractor), Subtitle Merger for sequential or dual-language bilingual tracks (/tools/merger), and YouTube Chapters Generator (/tools/youtube-chapters), plus the AI Subtitle Assistant (/ai-assistant). Help users with subtitles, SRT and WebVTT syntax, cue timing/sync, video editing workflows, framerate conversions (23.976, 24, 25, 29.97, 30, 60 fps), subtitle translation, reading speed (CPS) & WCAG accessibility, and SubForge tools. Keep answers clear, accurate, concise, and practical.',
+      timeoutMs: 30000,
       maxRetries: 2,
     });
+
+    if (!result.text || !result.text.trim()) {
+      return res.status(502).json({
+        configured: true,
+        isLiveAi: false,
+        offline: true,
+        error: 'The AI service returned an empty response. Please try again.',
+      });
+    }
 
     return res.json({
       configured: true,
       isLiveAi: true,
+      offline: false,
       provider: result.model,
-      message: result.text || 'I have analyzed your request regarding SubForge subtitle tools.',
+      message: result.text.trim(),
     });
   } catch (err: any) {
-    const localHelp = getLocalToolGuidance(userPrompt);
-    return res.json({
-      configured: false,
+    let cleanErr = 'Upstream AI request failed.';
+    try {
+      const msg = String(err?.message || '');
+      if (msg.startsWith('{') && msg.endsWith('}')) {
+        const parsed = JSON.parse(msg);
+        cleanErr = parsed?.error?.message || parsed?.message || msg;
+      } else if (msg) {
+        cleanErr = msg;
+      }
+    } catch {
+      cleanErr = String(err?.message || 'AI service unavailable.');
+    }
+
+    const isTimeout = cleanErr.toLowerCase().includes('timed out') || cleanErr.toLowerCase().includes('deadline');
+    return res.status(isTimeout ? 504 : 503).json({
+      configured: true,
       isLiveAi: false,
-      provider: 'SubForge Offline Knowledge Engine (API Fallback)',
-      message: `${localHelp}\n\n[Note: Gemini API unavailable (${err?.message || 'timeout'}). Operating in offline mode.]`,
+      offline: true,
+      error: `AI chatbot could not reach the AI service (${cleanErr}). Please try again in a moment.`,
     });
   }
 });
@@ -587,13 +1131,357 @@ ${subtitleContent.slice(0, 15000)}`;
   }
 });
 
+// POST /api/ai/translate-subtitles - Real server-side Gemini subtitle translation (never fakes AI output)
+app.post('/api/ai/translate-subtitles', async (req, res) => {
+  const { cues, targetLang, targetLangName } = req.body || {};
+
+  if (!Array.isArray(cues) || cues.length === 0) {
+    return res.status(400).json({
+      error: 'At least one subtitle cue is required for translation.',
+      isLiveAi: false,
+    });
+  }
+
+  const normalizedLang = typeof targetLang === 'string' ? targetLang.trim() : '';
+  if (!normalizedLang) {
+    return res.status(400).json({
+      error: 'Target language is required.',
+      isLiveAi: false,
+    });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return res.status(503).json({
+      configured: false,
+      isLiveAi: false,
+      offline: true,
+      error: 'External AI Translation is unavailable because GEMINI_API_KEY is not configured on the server.',
+    });
+  }
+
+  const sanitizedCues = cues.slice(0, 250).map((c: any, idx: number) => ({
+    index: idx,
+    text: String(c?.text || '').trim(),
+  }));
+
+  const languageLabel =
+    typeof targetLangName === 'string' && targetLangName.trim()
+      ? `${targetLangName.trim()} (${normalizedLang})`
+      : normalizedLang;
+
+  const prompt = `Translate the following subtitle cue dialogue lines accurately into ${languageLabel}.
+Rules:
+1. Keep the exact array length (${sanitizedCues.length} items) and matching "index" integer for every cue.
+2. Preserve line breaks inside subtitles where natural, and keep subtitle phrasing concise for on-screen readability.
+3. Return ONLY valid JSON in this exact shape (no markdown fences):
+{"translations":[{"index":0,"text":"..."}]}
+
+CUES:
+${JSON.stringify(sanitizedCues)}`;
+
+  try {
+    const result = await callGeminiWithRetry(prompt, {
+      systemInstruction:
+        'You are a professional audiovisual subtitle localization translator. Output strict JSON containing translated subtitle cues matching every input index.',
+      timeoutMs: 35000,
+      maxRetries: 2,
+    });
+
+    let rawJson = result.text.trim();
+    const fenceMatch = rawJson.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenceMatch) {
+      rawJson = fenceMatch[1].trim();
+    }
+
+    const parsed = JSON.parse(rawJson);
+    const list: Array<{ index: number; text: string }> = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.translations)
+      ? parsed.translations
+      : [];
+
+    if (list.length === 0) {
+      return res.status(502).json({
+        configured: true,
+        isLiveAi: false,
+        offline: true,
+        error: 'AI translation returned an unrecognized structure. Please retry.',
+      });
+    }
+
+    const byIndex = new Map<number, string>();
+    for (const item of list) {
+      if (typeof item?.index === 'number' && typeof item?.text === 'string') {
+        byIndex.set(item.index, item.text.trim());
+      }
+    }
+
+    const translatedCues = cues.slice(0, 250).map((orig: any, idx: number) => ({
+      ...orig,
+      text: byIndex.get(idx) || String(orig?.text || ''),
+    }));
+
+    return res.json({
+      configured: true,
+      isLiveAi: true,
+      offline: false,
+      provider: result.model,
+      targetLang: normalizedLang,
+      cues: translatedCues,
+    });
+  } catch (err: any) {
+    const cleanErr = String(err?.message || 'AI translation failed.');
+    const isTimeout = cleanErr.toLowerCase().includes('timed out') || cleanErr.toLowerCase().includes('deadline');
+    return res.status(isTimeout ? 504 : 503).json({
+      configured: true,
+      isLiveAi: false,
+      offline: true,
+      error: `External AI Translation failed (${cleanErr}).`,
+    });
+  }
+});
+
+// POST /api/ai/assist - Server-side Gemini Subtitle Assistant (Grammar, Summary, Diagnose, Custom)
+app.post('/api/ai/assist', async (req, res) => {
+  const { task, content, customPrompt, targetLang, targetLangName } = req.body || {};
+  const subtitleContent = typeof content === 'string' ? content.trim() : '';
+
+  if (!subtitleContent) {
+    return res.status(400).json({ error: 'Subtitle content is required.', isLiveAi: false });
+  }
+
+  const validTasks = new Set(['grammar', 'summary', 'diagnose', 'custom', 'translate']);
+  if (!validTasks.has(task)) {
+    return res.status(400).json({ error: 'Unsupported assistant task.', isLiveAi: false });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return res.status(503).json({
+      configured: false,
+      isLiveAi: false,
+      offline: true,
+      error: 'Gemini AI is currently offline because GEMINI_API_KEY is not configured on the server.',
+    });
+  }
+
+  const clipped = subtitleContent.slice(0, 18000);
+
+  try {
+    if (task === 'grammar') {
+      const prompt = `Clean and polish the following SRT or WebVTT subtitle file.
+Rules:
+1. Fix grammar, spelling, punctuation, capitalization, contractions, and remove verbal fillers/stutters (um, uh, repeated words).
+2. STRICTLY preserve the exact SRT/VTT header, cue numbers, timestamps ("-->"), and cue structure without shifting any timing.
+3. Return ONLY valid JSON in this shape (no markdown fences):
+{"improvedText":"...","changesCount":1,"explanations":["..."]}
+
+SUBTITLE INPUT:
+${clipped}`;
+
+      const result = await callGeminiWithRetry(prompt, {
+        systemInstruction:
+          'You are an expert subtitle copy editor. Preserve all SRT/WebVTT timestamps verbatim while polishing grammar and readability. Output valid JSON only.',
+        timeoutMs: 35000,
+        maxRetries: 2,
+      });
+
+      let rawJson = result.text.trim();
+      const fenceMatch = rawJson.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenceMatch) rawJson = fenceMatch[1].trim();
+      const parsed = JSON.parse(rawJson);
+
+      if (typeof parsed?.improvedText !== 'string' || !parsed.improvedText.trim()) {
+        throw new Error('Empty grammar output from AI.');
+      }
+
+      return res.json({
+        configured: true,
+        isLiveAi: true,
+        provider: result.model,
+        result: {
+          improvedText: parsed.improvedText,
+          changesCount: typeof parsed.changesCount === 'number' ? parsed.changesCount : 1,
+          explanations: Array.isArray(parsed.explanations) && parsed.explanations.length > 0
+            ? parsed.explanations.map(String)
+            : ['Polished grammar, capitalization, and spoken stutters via Gemini AI.'],
+        },
+      });
+    }
+
+    if (task === 'translate') {
+      const langLabel =
+        typeof targetLangName === 'string' && targetLangName.trim()
+          ? targetLangName.trim()
+          : String(targetLang || 'es');
+      const prompt = `Translate the spoken dialogue in the following SRT or WebVTT subtitle file into ${langLabel}.
+Rules:
+1. STRICTLY preserve all SRT/VTT headers, cue numbers, timestamps ("-->"), and blank separator lines intact.
+2. Translate only the spoken subtitle dialogue text naturally.
+3. Return ONLY valid JSON (no markdown fences):
+{"translatedText":"...","wordCount":10}
+
+SUBTITLE INPUT:
+${clipped}`;
+
+      const result = await callGeminiWithRetry(prompt, {
+        systemInstruction:
+          'You are a professional subtitle translator. Translate subtitle dialogue accurately while keeping every cue index and timestamp untouched. Output valid JSON only.',
+        timeoutMs: 35000,
+        maxRetries: 2,
+      });
+
+      let rawJson = result.text.trim();
+      const fenceMatch = rawJson.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenceMatch) rawJson = fenceMatch[1].trim();
+      const parsed = JSON.parse(rawJson);
+
+      if (typeof parsed?.translatedText !== 'string' || !parsed.translatedText.trim()) {
+        throw new Error('Empty translation output from AI.');
+      }
+
+      return res.json({
+        configured: true,
+        isLiveAi: true,
+        provider: result.model,
+        result: {
+          translatedText: parsed.translatedText,
+          sourceLang: 'auto',
+          targetLang: String(targetLang || 'es'),
+          wordCount: typeof parsed.wordCount === 'number' ? parsed.wordCount : clipped.split(/\s+/).length,
+        },
+      });
+    }
+
+    if (task === 'summary') {
+      const prompt = `Summarize the dialogue of the following subtitle track.
+Return ONLY valid JSON (no markdown fences):
+{"summary":"...","bulletPoints":["..."],"topics":["..."],"readingTimeMinutes":1,"wordCount":100}
+
+SUBTITLE INPUT:
+${clipped}`;
+
+      const result = await callGeminiWithRetry(prompt, {
+        systemInstruction:
+          'You are a concise video content analyst. Summarize subtitle transcripts into clear key takeaways and topics. Output valid JSON only.',
+        timeoutMs: 35000,
+        maxRetries: 2,
+      });
+
+      let rawJson = result.text.trim();
+      const fenceMatch = rawJson.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenceMatch) rawJson = fenceMatch[1].trim();
+      const parsed = JSON.parse(rawJson);
+
+      return res.json({
+        configured: true,
+        isLiveAi: true,
+        provider: result.model,
+        result: {
+          summary: String(parsed?.summary || ''),
+          bulletPoints: Array.isArray(parsed?.bulletPoints) ? parsed.bulletPoints.map(String) : [],
+          topics: Array.isArray(parsed?.topics) ? parsed.topics.map(String) : [],
+          readingTimeMinutes: typeof parsed?.readingTimeMinutes === 'number' ? parsed.readingTimeMinutes : 1,
+          wordCount: typeof parsed?.wordCount === 'number' ? parsed.wordCount : clipped.split(/\s+/).length,
+        },
+      });
+    }
+
+    if (task === 'diagnose') {
+      const prompt = `Audit the following subtitle track for broadcast reading speed (CPS > 20), cue durations (<0.8s or >7s), line breaks, and clarity.
+Return ONLY valid JSON (no markdown fences):
+{"issueCount":0,"qualityScore":95,"insights":[{"type":"warning","title":"...","description":"...","fixSuggestion":"..."}]}
+
+SUBTITLE INPUT:
+${clipped}`;
+
+      const result = await callGeminiWithRetry(prompt, {
+        systemInstruction:
+          'You are a Netflix/BBC subtitle QC specialist. Audit subtitle timing, CPS, and readability. Output valid JSON only.',
+        timeoutMs: 35000,
+        maxRetries: 2,
+      });
+
+      let rawJson = result.text.trim();
+      const fenceMatch = rawJson.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenceMatch) rawJson = fenceMatch[1].trim();
+      const parsed = JSON.parse(rawJson);
+
+      return res.json({
+        configured: true,
+        isLiveAi: true,
+        provider: result.model,
+        result: {
+          issueCount: typeof parsed?.issueCount === 'number' ? parsed.issueCount : 0,
+          qualityScore: typeof parsed?.qualityScore === 'number' ? parsed.qualityScore : 90,
+          insights: Array.isArray(parsed?.insights) ? parsed.insights : [],
+        },
+      });
+    }
+
+    // custom task
+    const instruction = typeof customPrompt === 'string' && customPrompt.trim()
+      ? customPrompt.trim().slice(0, 600)
+      : 'Improve grammar and readability while preserving all timestamps.';
+
+    const prompt = `Apply the following creator instruction to the SRT/WebVTT subtitle input below.
+STRICTLY preserve all SRT/VTT cue numbers and timestamp lines ("-->") unless explicitly asked to rewrite without timestamps.
+Output ONLY the transformed subtitle text without markdown code fences.
+
+CREATOR INSTRUCTION:
+${instruction}
+
+SUBTITLE INPUT:
+${clipped}`;
+
+    const result = await callGeminiWithRetry(prompt, {
+      systemInstruction:
+        'You are an expert subtitle transformation assistant. Follow the creator instruction accurately while preserving valid SRT/WebVTT syntax.',
+      timeoutMs: 35000,
+      maxRetries: 2,
+    });
+
+    return res.json({
+      configured: true,
+      isLiveAi: true,
+      provider: result.model,
+      result: {
+        outputText: result.text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim(),
+      },
+    });
+  } catch (err: any) {
+    const cleanErr = String(err?.message || 'AI assistant request failed.');
+    const isTimeout = cleanErr.toLowerCase().includes('timed out') || cleanErr.toLowerCase().includes('deadline');
+    return res.status(isTimeout ? 504 : 503).json({
+      configured: true,
+      isLiveAi: false,
+      offline: true,
+      error: `AI processing failed (${cleanErr}).`,
+    });
+  }
+});
+
+// Return explicit JSON 404 for unknown API endpoints before SPA fallback
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'API endpoint not found.' });
+});
+
 // ============================================================================
 // VITE / STATIC SERVING
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
+  const staticOptions = {
+    setHeaders: (res: express.Response, filePath: string) => {
+      if (filePath.endsWith('.wasm')) {
+        res.setHeader('Content-Type', 'application/wasm');
+      }
+    },
+  };
+
   const publicPath = path.resolve(__dirname, 'public');
   if (fs.existsSync(publicPath)) {
-    app.use(express.static(publicPath));
+    app.use(express.static(publicPath, staticOptions));
   }
 
   if (!isProd) {
@@ -604,7 +1492,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, staticOptions));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });

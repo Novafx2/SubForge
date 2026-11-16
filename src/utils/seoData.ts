@@ -11,6 +11,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Free browser-based SRT to VTT converter. Transform SubRip subtitle files into standard WebVTT subtitles for HTML5 video, Vimeo, Coursera, and web players. 100% private and client-side.',
     category: 'convert',
     icon: 'FileCode2',
+    emoji: '🔄',
     keywords: ['srt to vtt', 'convert srt to webvtt', 'subrip to vtt', 'html5 video captions', 'free subtitle converter'],
   },
   {
@@ -23,6 +24,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Convert WebVTT (.vtt) files to standard SubRip (.srt) subtitle format instantly in your browser. Cleans WebVTT headers, removes cue settings, and fixes comma timestamps for Premiere Pro, VLC, and TV players.',
     category: 'convert',
     icon: 'FileText',
+    emoji: '📝',
     keywords: ['vtt to srt', 'convert webvtt to srt', 'vtt to subrip', 'clean vtt', 'subtitle format conversion'],
   },
   {
@@ -35,6 +37,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Easily fix out-of-sync subtitles. Delay or advance subtitle cues by exact milliseconds, seconds, or minutes. Correct gradual audio-video drift with linear time stretching. Works with SRT and VTT.',
     category: 'sync',
     icon: 'Clock',
+    emoji: '⏱️',
     keywords: ['subtitle timing fixer', 'shift subtitle delay', 'sync subtitles', 'srt time offset', 'fix out of sync captions'],
   },
   {
@@ -47,6 +50,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Convert subtitle framerates between 23.976 fps film, 24 fps cinema, 25 fps PAL, and 29.97/30 fps NTSC. Fix cumulative subtitle desync caused by video framerate speed differences.',
     category: 'sync',
     icon: 'FastForward',
+    emoji: '🎞️',
     keywords: ['subtitle fps converter', '23.976 to 25 fps srt', 'pal to ntsc subtitle converter', 'subtitle framerate speedup', 'framerate sync fix'],
   },
   {
@@ -59,6 +63,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Professional subtitle quality checker and linter. Detect overlapping cues, negative durations, excessive characters-per-second (CPS), line length violations, and unclosed tags. Includes 1-click Auto-Fix.',
     category: 'audit',
     icon: 'ShieldAlert',
+    emoji: '🛡️',
     keywords: ['subtitle validator', 'srt linter', 'check subtitle errors', 'reading speed cps checker', 'fix overlapping subtitles'],
   },
   {
@@ -71,6 +76,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Extract clean readable text from SRT, VTT, or subtitle files. Removes timestamps, cue numbers, sound effect brackets [music], and speaker labels. Groups captions into natural prose paragraphs.',
     category: 'creator',
     icon: 'FileSpreadsheet',
+    emoji: '📄',
     keywords: ['extract text from srt', 'srt to txt converter', 'turn subtitles into transcript', 'clean captions text', 'remove srt timestamps'],
   },
   {
@@ -83,6 +89,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Combine two subtitle files into one. Append CD1 and CD2 movie parts with automatic timestamp offsets, or merge two languages into bilingual dual-caption subtitles for language learning and localization.',
     category: 'creator',
     icon: 'Layers',
+    emoji: '🔗',
     keywords: ['merge subtitles', 'combine srt files', 'bilingual subtitles generator', 'dual language srt merger', 'join srt cd1 cd2'],
   },
   {
@@ -95,9 +102,52 @@ export const TOOLS: ToolMeta[] = [
     description: 'Free YouTube Chapters generator. Automatically build and validate YouTube video timestamps from your subtitle files or create custom chapters. Enforces 00:00 start, minimum 3 chapters, and 10s intervals.',
     category: 'creator',
     icon: 'Video',
+    emoji: '🎬',
     keywords: ['youtube chapters generator', 'youtube timestamp generator', 'video chapters maker', 'youtube description chapters', 'auto generate youtube chapters'],
   },
 ];
+
+const TOOL_ID_EMOJI_MAP: Record<string, string> = {
+  'srt-to-vtt': '🔄',
+  'vtt-to-srt': '📝',
+  'timing-fixer': '⏱️',
+  'fps-converter': '🎞️',
+  'validator': '🛡️',
+  'text-extractor': '📄',
+  'merger': '🔗',
+  'youtube-chapters': '🎬',
+  'video-studio': '🎥',
+  'ai-assistant': '🤖',
+  'translator': '🌐',
+};
+
+const TOOL_ICON_EMOJI_MAP: Record<string, string> = {
+  FileCode2: '🔄',
+  FileText: '📝',
+  Clock: '⏱️',
+  FastForward: '🎞️',
+  ShieldAlert: '🛡️',
+  FileSpreadsheet: '📄',
+  Layers: '🔗',
+  Video: '🎬',
+};
+
+const TOOL_CATEGORY_EMOJI_MAP: Record<ToolMeta['category'], string> = {
+  convert: '🔄',
+  sync: '⏱️',
+  audit: '🛡️',
+  creator: '🎬',
+};
+
+export function getToolEmoji(tool: Pick<ToolMeta, 'id' | 'icon' | 'category' | 'emoji'>): string {
+  if (tool.emoji) return tool.emoji;
+  return (
+    TOOL_ID_EMOJI_MAP[tool.id] ||
+    TOOL_ICON_EMOJI_MAP[tool.icon] ||
+    TOOL_CATEGORY_EMOJI_MAP[tool.category] ||
+    '🛠️'
+  );
+}
 
 export interface FaqItem {
   question: string;

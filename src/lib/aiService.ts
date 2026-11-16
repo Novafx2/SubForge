@@ -19,6 +19,8 @@ export interface AiGrammarResult {
   improvedText: string;
   changesCount: number;
   explanations: string[];
+  isLiveAi?: boolean;
+  provider?: string;
 }
 
 export interface AiTranslationResult {
@@ -26,6 +28,8 @@ export interface AiTranslationResult {
   sourceLang: string;
   targetLang: string;
   wordCount: number;
+  isLiveAi?: boolean;
+  provider?: string;
 }
 
 export interface AiSummaryResult {
@@ -53,6 +57,53 @@ export interface AiDiagnosticsResult {
     description: string;
     fixSuggestion: string;
   }[];
+  isLiveAi?: boolean;
+  provider?: string;
+}
+
+export type AiAssistTask = 'grammar' | 'translate' | 'summary' | 'diagnose' | 'custom';
+
+export async function runBackendAiAssist<T = any>(params: {
+  task: AiAssistTask;
+  content: string;
+  targetLang?: string;
+  targetLangName?: string;
+  customPrompt?: string;
+}): Promise<{ ok: true; provider: string; result: T } | { ok: false; offline: boolean; error: string }> {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') {
+    return { ok: false, offline: true, error: 'Browser runtime unavailable.' };
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 38000);
+  try {
+    const res = await fetch('/api/ai/assist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify(params),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.isLiveAi && data?.result) {
+      return {
+        ok: true,
+        provider: data.provider || 'Google Gemini AI',
+        result: data.result as T,
+      };
+    }
+    return {
+      ok: false,
+      offline: Boolean(data?.offline ?? res.status >= 500),
+      error: data?.error || 'Live Gemini AI service unavailable.',
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      offline: true,
+      error: err?.name === 'AbortError' ? 'Gemini AI request timed out (38s).' : 'Network error reaching AI backend.',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // Common translation dictionaries for instant offline high-accuracy translation
@@ -379,7 +430,7 @@ export async function diagnoseSubtitleQuality(
   await new Promise((r) => setTimeout(r, 100));
 
   const insights: AiDiagnosticsResult['insights'] = [];
-  const cueRegex = /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})\r?\n([\s\S]*?)(?=\r?\n\r?\n|\s*$)/g;
+  const cueRegex = /((?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{3})\s*-->\s*((?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{3})[^\r\n]*\r?\n([\s\S]*?)(?=\r?\n\r?\n|\s*$)/g;
   let match;
   let totalCues = 0;
   let highCpsCues = 0;
@@ -388,11 +439,18 @@ export async function diagnoseSubtitleQuality(
 
   const parseTime = (t: string) => {
     const parts = t.replace('.', ',').split(':');
+    if (parts.length === 2) {
+      const m = parseInt(parts[0], 10);
+      const secParts = parts[1].split(',');
+      const s = parseInt(secParts[0], 10);
+      const ms = parseInt(secParts[1] || '0', 10);
+      return m * 60 + s + ms / 1000;
+    }
     const h = parseInt(parts[0], 10);
     const m = parseInt(parts[1], 10);
-    const secParts = parts[2].split(',');
+    const secParts = (parts[2] || '0,0').split(',');
     const s = parseInt(secParts[0], 10);
-    const ms = parseInt(secParts[1], 10);
+    const ms = parseInt(secParts[1] || '0', 10);
     return h * 3600 + m * 60 + s + ms / 1000;
   };
 
@@ -487,7 +545,7 @@ export async function generateSmartChapters(
 ): Promise<AiChapterItem[]> {
   onProgress?.({ status: 'Connecting to Gemini AI Chapters Engine...', progress: 15 });
 
-  // 1. Attempt server-side Gemini 3.8 Flash chapter generation
+  // 1. Attempt server-side Gemini AI chapter generation
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 35000);
@@ -513,7 +571,7 @@ export async function generateSmartChapters(
           title: c.title,
           summary: c.title,
           source: data.isLiveAi ? ('gemini-ai' as const) : ('offline-detection' as const),
-          provider: data.provider || 'Google Gemini 3.8 Flash',
+          provider: data.provider || (data.isLiveAi ? 'Google Gemini AI' : 'SubForge Offline Subtitle Engine'),
         }));
       }
     }

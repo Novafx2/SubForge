@@ -8,6 +8,14 @@
     <priority>1.0</priority>
   </url>
 
+  <!-- Video Studio Terminal -->
+  <url>
+    <loc>https://subforge.app/video-studio</loc>
+    <lastmod>2026-11-16</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
   <!-- Tool 1: SRT to VTT -->
   <url>
     <loc>https://subforge.app/tools/srt-to-vtt</loc>

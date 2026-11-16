@@ -46,7 +46,11 @@ export function SEOHead({
     metaDesc.setAttribute('content', description);
 
     // 3. Update Canonical Link
-    const fullUrl = `https://subforge.app${canonicalPath}`;
+    const baseOrigin =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'https://subforge.app';
+    const fullUrl = `${baseOrigin}${canonicalPath}`;
     let canonical = document.querySelector('link[rel="canonical"]');
     if (!canonical) {
       canonical = document.createElement('link');

@@ -8,7 +8,7 @@ export interface UserProfile {
   username: string;
   fullName?: string;
   avatarUrl?: string | null;
-  provider?: 'Google' | 'Facebook' | string;
+  provider?: 'Google' | string;
   role?: UserRoleType;
   status: AccountStatus;
   avatar_url?: string;

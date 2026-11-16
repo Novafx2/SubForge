@@ -45,5 +45,6 @@ export interface ToolMeta {
   description: string;
   category: 'convert' | 'sync' | 'audit' | 'creator';
   icon: string;
+  emoji?: string;
   keywords: string[];
 }

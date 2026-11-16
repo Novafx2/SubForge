@@ -1,0 +1,29 @@
+<svg viewBox="0 0 48 48" width="48" height="48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sf-glass-bg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2E1065" />
+      <stop offset="50%" stop-color="#1E0A3C" />
+      <stop offset="100%" stop-color="#0B031E" />
+    </linearGradient>
+    <linearGradient id="sf-arc-cyan" x1="6" y1="8" x2="38" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#818CF8" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+    <linearGradient id="sf-arc-purple" x1="42" y1="40" x2="10" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E879F9" />
+      <stop offset="50%" stop-color="#A855F7" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+    <linearGradient id="sf-rim" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.75)" />
+      <stop offset="40%" stop-color="rgba(192,132,252,0.5)" />
+      <stop offset="100%" stop-color="rgba(56,189,248,0.3)" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="44" height="44" rx="12" fill="url(#sf-glass-bg)" stroke="url(#sf-rim)" stroke-width="1.5" />
+  <path d="M34 16C34 13.7909 30.866 12 27 12H19C15.134 12 12 14.2386 12 17C12 21 17 22.5 24 24" stroke="url(#sf-arc-cyan)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M14 32C14 34.2091 17.134 36 21 36H29C32.866 36 36 33.7614 36 31C36 27 31 25.5 24 24" stroke="url(#sf-arc-purple)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="24" cy="24" r="2.4" fill="#FFFFFF" />
+  <circle cx="24" cy="24" r="4" fill="#38BDF8" opacity="0.45" />
+</svg>

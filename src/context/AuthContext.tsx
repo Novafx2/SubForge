@@ -4,10 +4,70 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signOut as firebaseSignOut,
+  setPersistence,
+  browserLocalPersistence,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db, googleProvider, facebookProvider } from '../lib/firebase';
+import { doc, getDoc, getDocFromServer, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db, googleProvider } from '../lib/firebase';
 import { UserProfile, UserRoleType } from '../types/auth';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error:', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+async function testFirestoreConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -17,13 +77,16 @@ interface AuthContextType {
   isSuspended: boolean;
   loading: boolean;
   signInWithGoogle: () => Promise<{ error?: string }>;
-  signInWithFacebook: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   adminLogin: (username: string, password: string) => Promise<{ error?: string }>;
   adminLogout: () => Promise<void>;
   claimAdminBootstrap: (secretKey: string) => Promise<{ error?: string; message?: string }>;
   changeAdminPassword: (
     currentPassword: string,
+    newPassword: string
+  ) => Promise<{ error?: string; message?: string }>;
+  rotateAdminPassword: (
+    bootstrapSecretKey: string,
     newPassword: string
   ) => Promise<{ error?: string; message?: string }>;
   refreshAdminSession: () => Promise<void>;
@@ -37,12 +100,12 @@ const AuthContext = createContext<AuthContextType>({
   isSuspended: false,
   loading: true,
   signInWithGoogle: async () => ({}),
-  signInWithFacebook: async () => ({}),
   signOut: async () => {},
   adminLogin: async () => ({}),
   adminLogout: async () => {},
   claimAdminBootstrap: async () => ({}),
   changeAdminPassword: async () => ({}),
+  rotateAdminPassword: async () => ({}),
   refreshAdminSession: async () => {},
 });
 
@@ -72,14 +135,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const syncUserToFirestore = useCallback(async (fbUser: User) => {
+    const userPath = `users/${fbUser.uid}`;
     try {
       const userRef = doc(db, 'users', fbUser.uid);
       const snap = await getDoc(userRef);
 
-      const providerId =
-        fbUser.providerData?.[0]?.providerId === 'facebook.com'
-          ? 'Facebook'
-          : 'Google';
+      const providerId = 'Google';
 
       const fullName =
         fbUser.displayName ||
@@ -101,11 +162,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
           last_login_at: new Date().toISOString(),
         };
-        await setDoc(userRef, {
-          ...newProfile,
-          createdAtServer: serverTimestamp(),
-          lastLoginAtServer: serverTimestamp(),
-        });
+        try {
+          await setDoc(userRef, {
+            ...newProfile,
+            createdAtServer: serverTimestamp(),
+            lastLoginAtServer: serverTimestamp(),
+          });
+        } catch (writeErr) {
+          handleFirestoreError(writeErr, OperationType.CREATE, userPath);
+        }
         setProfile(newProfile);
       } else {
         const existing = snap.data() as UserProfile;
@@ -119,34 +184,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
           last_login_at: new Date().toISOString(),
         };
-        await setDoc(
-          userRef,
-          {
-            email: updatedProfile.email,
-            username: updatedProfile.username,
-            fullName: updatedProfile.fullName,
-            avatarUrl: updatedProfile.avatarUrl,
-            provider: updatedProfile.provider,
-            updated_at: updatedProfile.updated_at,
-            last_login_at: updatedProfile.last_login_at,
-            lastLoginAtServer: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        try {
+          await setDoc(
+            userRef,
+            {
+              email: updatedProfile.email,
+              username: updatedProfile.username,
+              fullName: updatedProfile.fullName,
+              avatarUrl: updatedProfile.avatarUrl,
+              provider: updatedProfile.provider,
+              updated_at: updatedProfile.updated_at,
+              last_login_at: updatedProfile.last_login_at,
+              lastLoginAtServer: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (updateErr) {
+          handleFirestoreError(updateErr, OperationType.UPDATE, userPath);
+        }
         setProfile(updatedProfile);
       }
-    } catch {
-      // Fallback profile if Firestore rules/network pending
+    } catch (err) {
+      // Fallback profile if Firestore rules/network pending while still preserving session
+      console.warn('Firestore profile sync fallback:', err);
       setProfile({
         id: fbUser.uid,
         email: fbUser.email || '',
         username: fbUser.displayName || 'User',
         fullName: fbUser.displayName || 'User',
         avatarUrl: fbUser.photoURL || null,
-        provider:
-          fbUser.providerData?.[0]?.providerId === 'facebook.com'
-            ? 'Facebook'
-            : 'Google',
+        provider: 'Google',
         status: 'active',
         role: 'user',
         created_at: new Date().toISOString(),
@@ -157,6 +224,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshAdminSession();
+    testFirestoreConnection();
+    setPersistence(auth, browserLocalPersistence).catch(() => {
+      // Fallback gracefully if third-party storage is restricted
+    });
 
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
@@ -174,6 +245,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
+      await setPersistence(auth, browserLocalPersistence).catch(() => {});
       const result = await signInWithPopup(auth, googleProvider);
       if (result.user) {
         await syncUserToFirestore(result.user);
@@ -184,6 +256,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (code === 'auth/popup-closed-by-user') {
         return { error: 'Google sign-in was cancelled.' };
       }
+      if (code === 'auth/popup-blocked') {
+        return { error: 'Pop-up was blocked by your browser. Please allow pop-ups and try again.' };
+      }
+      if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        return {
+          error: `Domain "${host}" is not authorized in Firebase Authentication. Add "${host}" under Firebase Console → Authentication → Settings → Authorized domains.`,
+        };
+      }
       if (code === 'auth/operation-not-allowed') {
         return {
           error:
@@ -191,28 +272,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
       return { error: err?.message || 'Google sign-in failed.' };
-    }
-  };
-
-  const signInWithFacebook = async () => {
-    try {
-      const result = await signInWithPopup(auth, facebookProvider);
-      if (result.user) {
-        await syncUserToFirestore(result.user);
-      }
-      return {};
-    } catch (err: any) {
-      const code = err?.code || '';
-      if (code === 'auth/popup-closed-by-user') {
-        return { error: 'Facebook sign-in was cancelled.' };
-      }
-      if (code === 'auth/operation-not-allowed') {
-        return {
-          error:
-            'Facebook Sign-In is not enabled yet in Firebase Console. Please enable Facebook under Authentication → Sign-in method with your Facebook App ID and App Secret.',
-        };
-      }
-      return { error: err?.message || 'Facebook sign-in failed.' };
     }
   };
 
@@ -290,6 +349,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const rotateAdminPassword = async (bootstrapSecretKey: string, newPassword: string) => {
+    try {
+      const res = await fetch('/api/admin/rotate-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ bootstrapSecretKey, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { error: data.error || 'Failed to rotate administrator password.' };
+      }
+      return { message: data.message || 'Administrator credentials rotated successfully!' };
+    } catch (err: any) {
+      return { error: err?.message || 'Network error while rotating password.' };
+    }
+  };
+
   const isSuspended = profile?.status === 'suspended';
 
   return (
@@ -302,12 +379,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isSuspended,
         loading,
         signInWithGoogle,
-        signInWithFacebook,
         signOut,
         adminLogin,
         adminLogout,
         claimAdminBootstrap,
         changeAdminPassword,
+        rotateAdminPassword,
         refreshAdminSession,
       }}
     >

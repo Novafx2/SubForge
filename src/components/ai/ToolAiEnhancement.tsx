@@ -4,6 +4,7 @@ import {
   improveSubtitleGrammar,
   translateSubtitleText,
   diagnoseSubtitleQuality,
+  runBackendAiAssist,
   AiTaskProgress
 } from '../../lib/aiService';
 
@@ -26,10 +27,20 @@ export function ToolAiEnhancement({ currentText, onApplyOutput, toolName = 'Subt
     if (!currentText.trim()) return;
     setLoading(true);
     setApplied(false);
+    setProgress({ status: 'Connecting to Gemini AI grammar engine...', progress: 25 });
     try {
-      const res = await improveSubtitleGrammar(currentText, setProgress);
-      setResultText(res.improvedText);
-      setNotes(res.explanations);
+      const live = await runBackendAiAssist<{ improvedText: string; explanations: string[] }>({
+        task: 'grammar',
+        content: currentText,
+      });
+      if (live.ok) {
+        setResultText(live.result.improvedText);
+        setNotes([`Processed via ${live.provider}`, ...live.result.explanations]);
+      } else {
+        const res = await improveSubtitleGrammar(currentText, setProgress);
+        setResultText(res.improvedText);
+        setNotes([`Local Engine Fallback (${live.error})`, ...res.explanations]);
+      }
     } catch {
       setNotes(['Could not process subtitles. Please verify timestamp formatting.']);
     } finally {
@@ -42,10 +53,21 @@ export function ToolAiEnhancement({ currentText, onApplyOutput, toolName = 'Subt
     if (!currentText.trim()) return;
     setLoading(true);
     setApplied(false);
+    setProgress({ status: `Connecting to Gemini AI translator (${targetLang.toUpperCase()})...`, progress: 25 });
     try {
-      const res = await translateSubtitleText(currentText, targetLang, setProgress);
-      setResultText(res.translatedText);
-      setNotes([`Preserved all cue timestamps and translated dialogue into ${targetLang.toUpperCase()}.`]);
+      const live = await runBackendAiAssist<{ translatedText: string }>({
+        task: 'translate',
+        content: currentText,
+        targetLang,
+      });
+      if (live.ok) {
+        setResultText(live.result.translatedText);
+        setNotes([`Translated via ${live.provider} into ${targetLang.toUpperCase()} while keeping timestamps intact.`]);
+      } else {
+        const res = await translateSubtitleText(currentText, targetLang, setProgress);
+        setResultText(res.translatedText);
+        setNotes([`Local Dictionary Fallback (${live.error}) — translated common phrases into ${targetLang.toUpperCase()}.`]);
+      }
     } catch {
       setNotes(['Translation failed. Please verify syntax.']);
     } finally {
@@ -58,11 +80,25 @@ export function ToolAiEnhancement({ currentText, onApplyOutput, toolName = 'Subt
     if (!currentText.trim()) return;
     setLoading(true);
     setApplied(false);
+    setProgress({ status: 'Running broadcast CPS & timing audit...', progress: 25 });
     try {
-      const res = await diagnoseSubtitleQuality(currentText, setProgress);
-      setNotes(
-        res.insights.map((i) => `[${i.type.toUpperCase()}] ${i.title}: ${i.description}`)
-      );
+      const live = await runBackendAiAssist<{
+        insights: { type: string; title: string; description: string }[];
+      }>({
+        task: 'diagnose',
+        content: currentText,
+      });
+      if (live.ok) {
+        setNotes([
+          `Audited via ${live.provider}`,
+          ...live.result.insights.map((i) => `[${i.type.toUpperCase()}] ${i.title}: ${i.description}`),
+        ]);
+      } else {
+        const res = await diagnoseSubtitleQuality(currentText, setProgress);
+        setNotes(
+          res.insights.map((i) => `[${i.type.toUpperCase()}] ${i.title}: ${i.description}`)
+        );
+      }
     } catch {
       setNotes(['Diagnostics completed.']);
     } finally {

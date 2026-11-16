@@ -6,16 +6,19 @@ import { SubForgeLogo } from '../../components/common/SubForgeLogo';
 import { AlertCircle } from 'lucide-react';
 
 export function LoginPage() {
-  const { user, signInWithGoogle, signInWithFacebook } = useAuth();
+  const { user, signInWithGoogle } = useAuth();
   const { navigate } = useRouter();
 
   const [errorMsg, setErrorMsg] = useState('');
-  const [loadingProvider, setLoadingProvider] = useState<'google' | 'facebook' | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const getRedirectPath = () => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      return params.get('redirect') || '/dashboard';
+      const target = params.get('redirect') || '/dashboard';
+      if (target.startsWith('/') && !target.startsWith('//')) {
+        return target;
+      }
     }
     return '/dashboard';
   };
@@ -28,21 +31,9 @@ export function LoginPage() {
 
   const handleGoogleLogin = async () => {
     setErrorMsg('');
-    setLoadingProvider('google');
+    setLoading(true);
     const { error } = await signInWithGoogle();
-    setLoadingProvider(null);
-    if (error) {
-      setErrorMsg(error);
-    } else {
-      navigate(getRedirectPath());
-    }
-  };
-
-  const handleFacebookLogin = async () => {
-    setErrorMsg('');
-    setLoadingProvider('facebook');
-    const { error } = await signInWithFacebook();
-    setLoadingProvider(null);
+    setLoading(false);
     if (error) {
       setErrorMsg(error);
     } else {
@@ -54,7 +45,7 @@ export function LoginPage() {
     <div className="max-w-md mx-auto px-4 py-16 sm:py-24">
       <SEOHead
         title="Sign In – SubForge"
-        description="Sign in to SubForge with Google or Facebook to access all 8 subtitle editing tools and creator utilities."
+        description="Sign in to SubForge with Google to access all 8 subtitle editing tools and creator utilities."
         canonicalPath="/login"
       />
 
@@ -68,7 +59,7 @@ export function LoginPage() {
             Sign In to SubForge
           </h1>
           <p className="text-xs text-slate-400">
-            Choose your account provider to continue.
+            Sign in securely with your Google account to continue.
           </p>
         </div>
 
@@ -79,13 +70,13 @@ export function LoginPage() {
           </div>
         )}
 
-        <div className="space-y-3.5 text-sm">
-          {/* Continue with Google */}
+        {/* Centered Google Authentication Action */}
+        <div className="flex flex-col items-center justify-center text-sm">
           <button
             type="button"
-            disabled={loadingProvider !== null}
+            disabled={loading}
             onClick={handleGoogleLogin}
-            className="w-full py-3 px-5 rounded-full bg-white/95 hover:bg-white text-slate-900 font-semibold flex items-center justify-center gap-3 shadow-[0_8px_20px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,1)] disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0"
+            className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-full bg-white/95 hover:bg-white text-slate-900 font-semibold flex items-center justify-center gap-3 shadow-[0_8px_24px_rgba(0,0,0,0.45),0_0_20px_rgba(168,85,247,0.25),inset_0_1px_1px_rgba(255,255,255,1)] disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0 min-h-[48px] cursor-pointer"
           >
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
               <path
@@ -106,22 +97,7 @@ export function LoginPage() {
               />
             </svg>
             <span>
-              {loadingProvider === 'google' ? 'Opening Google...' : 'Continue with Google'}
-            </span>
-          </button>
-
-          {/* Continue with Facebook */}
-          <button
-            type="button"
-            disabled={loadingProvider !== null}
-            onClick={handleFacebookLogin}
-            className="w-full py-3 px-5 rounded-full bg-[#1877F2]/90 hover:bg-[#1877F2] text-white font-semibold flex items-center justify-center gap-3 shadow-[0_8px_20px_rgba(24,119,242,0.4),inset_0_1px_1px_rgba(255,255,255,0.4)] disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0"
-          >
-            <svg className="w-5 h-5 shrink-0 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073Z" />
-            </svg>
-            <span>
-              {loadingProvider === 'facebook' ? 'Opening Facebook...' : 'Continue with Facebook'}
+              {loading ? 'Opening Google...' : 'Continue with Google'}
             </span>
           </button>
         </div>

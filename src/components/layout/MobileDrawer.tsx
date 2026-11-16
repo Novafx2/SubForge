@@ -1,7 +1,6 @@
 import { Link } from '../../context/RouterContext';
 import {
   ShieldCheck,
-  Sparkles,
   User,
   LayoutDashboard,
   ShieldAlert,
@@ -25,6 +24,8 @@ export function MobileDrawer({
   profile,
   signOut,
 }: MobileDrawerProps) {
+  const normalizedPath = currentPath.split('?')[0].replace(/\/+$/, '') || '/';
+
   return (
     <div
       className={`md:hidden overflow-hidden transition-all duration-300 ease-out ${
@@ -87,30 +88,46 @@ export function MobileDrawer({
           <Link
             to="/"
             onClick={onClose}
-            className={`min-h-[44px] flex items-center justify-between py-2.5 px-3.5 rounded-xl text-xs font-semibold transition-all ${
-              currentPath === '/'
-                ? 'bg-purple-600/25 border border-purple-400/40 text-white'
-                : 'text-slate-200 hover:text-white hover:bg-purple-500/10'
+            className={`min-h-[44px] flex items-center justify-between py-2.5 px-3.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] ${
+              normalizedPath === '/'
+                ? 'liquid-glass-active-pill text-white'
+                : 'text-slate-200 hover:text-white hover:bg-[#A855F7]/15'
             }`}
           >
             <span>All 8 Creator Tools</span>
-            <ChevronRight className="w-4 h-4 text-purple-400" />
+            <ChevronRight className="w-4 h-4 text-purple-300" />
+          </Link>
+
+          <Link
+            to="/video-studio"
+            onClick={onClose}
+            className={`min-h-[44px] flex items-center justify-between py-2.5 px-3.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] ${
+              normalizedPath === '/video-studio'
+                ? 'liquid-glass-active-pill text-white'
+                : 'text-purple-200 hover:text-white hover:bg-[#A855F7]/15'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true" className="text-sm leading-none">🎬</span>
+              Video Studio
+            </span>
+            <ChevronRight className="w-4 h-4 text-purple-300" />
           </Link>
 
           <Link
             to="/ai-assistant"
             onClick={onClose}
-            className={`min-h-[44px] flex items-center justify-between py-2.5 px-3.5 rounded-xl text-xs font-semibold transition-all ${
-              currentPath === '/ai-assistant'
-                ? 'bg-purple-600/25 border border-purple-400/40 text-white'
-                : 'text-purple-300 hover:text-white hover:bg-purple-500/10'
+            className={`min-h-[44px] flex items-center justify-between py-2.5 px-3.5 rounded-xl text-xs font-semibold transition-all active:scale-[0.98] ${
+              normalizedPath === '/ai-assistant'
+                ? 'liquid-glass-active-pill text-white'
+                : 'text-purple-200 hover:text-white hover:bg-[#A855F7]/15'
             }`}
           >
             <span className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-cyan-300" />
+              <span aria-hidden="true" className="text-sm leading-none">🤖</span>
               AI Subtitle Assistant
             </span>
-            <ChevronRight className="w-4 h-4 text-purple-400" />
+            <ChevronRight className="w-4 h-4 text-purple-300" />
           </Link>
         </div>
 
@@ -129,10 +146,10 @@ export function MobileDrawer({
               key={tool.path}
               to={tool.path}
               onClick={onClose}
-              className={`min-h-[40px] flex items-center px-3 rounded-lg transition-colors ${
-                currentPath === tool.path
-                  ? 'bg-purple-600/25 text-purple-200 font-semibold border border-purple-400/30'
-                  : 'text-slate-300 hover:text-white hover:bg-purple-500/10'
+              className={`min-h-[40px] flex items-center px-3 rounded-lg transition-all active:scale-[0.98] ${
+                normalizedPath === tool.path
+                  ? 'liquid-glass-active-pill text-white font-semibold'
+                  : 'text-slate-300 hover:text-white hover:bg-[#A855F7]/15'
               }`}
             >
               {tool.label}
@@ -144,7 +161,11 @@ export function MobileDrawer({
           <Link
             to="/guide"
             onClick={onClose}
-            className="py-1.5 text-slate-400 hover:text-white"
+            className={`py-1.5 px-2.5 rounded-full transition-colors ${
+              normalizedPath === '/guide'
+                ? 'liquid-glass-active-pill text-white font-semibold'
+                : 'text-slate-400 hover:text-white'
+            }`}
           >
             Format Guide
           </Link>
